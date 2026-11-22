@@ -16,3 +16,7 @@
 - [x] Squad lobby (empty until invite, invited stand together, captain starts) + 10s countdown
 - [x] Chat new-message notification popup
 - [x] Drone night vision toggle (see in dark when on, normal view when off)
+
+- [x] Drone trailer: fly to 40m, roof fade, crane/orbit shots, 21:9, clean screen
+- [x] Bot teammates fill empty squad slots
+- [ ] Hantu Hoodie 3D terbang (ditunda oleh user)

@@ -19,6 +19,15 @@ export type GamePlayer = { id: string; nama: string; username: string; karakter:
 type Live = { yaw: number; x: number; y: number; tx: number; ty: number; status: string; shoutUntil: number; moving: boolean; battery: number; pitch: number; emote: string | null; emoteUntil: number };
 
 const HUNTER_SPEED = 150, GHOST_SPEED = 168;
+export const BOT_MATE_PREFIX = "bot-mate-";
+const BOT_NAMES = ["Bot Dimas", "Bot Sari", "Bot Yoga"];
+/** Squad is always 4: empty human slots are filled with hunter bots (same list on every client). */
+export function squadBots(players: { karakter: string }[]): GamePlayer[] {
+  const used = new Set(players.map((p) => p.karakter));
+  const free = (Object.keys(CHARACTERS) as CharId[]).filter((c) => !used.has(c));
+  const n = Math.max(0, 4 - players.length);
+  return Array.from({ length: n }, (_, i) => ({ id: `${BOT_MATE_PREFIX}${i}`, nama: BOT_NAMES[i]!, username: "", karakter: free[i % Math.max(1, free.length)] ?? "raka", role: "hunter" as const, status: "alive" }));
+}
 
 export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLeave, map = "rumah" }: {
   code: string; me: string; players: GamePlayer[]; startedAt: number; isHost: boolean; onBackToLobby: () => void; onLeave: () => void; map?: MapId;
@@ -42,8 +51,10 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
   const [chatOpen, setChatOpen] = useState(false);
   const [chatText, setChatText] = useState("");
   const [chatLog, setChatLog] = useState<{ k: number; id: string; sender_nama: string; body: string }[]>([]);
-  const all = useMemo<GamePlayer[]>(() => (players.some((p) => p.role === "ghost") ? players
-    : [...players, { id: BOT_GHOST_ID, nama: "Hantu AI", username: "", karakter: "raka", role: "ghost", status: "alive" }]), [players]);
+  const all = useMemo<GamePlayer[]>(() => {
+    const ghost: GamePlayer[] = players.some((p) => p.role === "ghost") ? [] : [{ id: BOT_GHOST_ID, nama: "Hantu AI", username: "", karakter: "raka", role: "ghost", status: "alive" }];
+    return [...players, ...squadBots(players), ...ghost];
+  }, [players]);
   const [emoteOpen, setEmoteOpen] = useState(false);
   const [scare, setScare] = useState(0);
   const ambushRef = useRef<() => void>(() => {});
@@ -180,6 +191,40 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       }
       if (now - botSend > 100) { botSend = now; send("pos", { id: BOT_GHOST_ID, x: Math.round(bot.x), y: Math.round(bot.y), a: Math.round(bot.yaw * 100) / 100, m: true, st: "alive", k: 0, b: 0 }); }
     };
+    // hunter bots (host simulates them, like the AI ghost): grab keys, flee the ghost, escape when the gate opens
+    const mates = all.filter((p) => p.id.startsWith(BOT_MATE_PREFIX)).map((p, i) => ({ id: p.id, l: live[p.id]!, dir: 0, stuck: 0, send: 0, wander: (i * 3) % BOT_PATROL.length, scared: 0 }));
+    const runMates = (now: number, dt: number) => {
+      const ghostId = all.find((p) => p.role === "ghost")?.id; const g = ghostId ? live[ghostId] : undefined;
+      for (const b of mates) {
+        const l = b.l;
+        if (l.status === "alive") {
+          let tx: number, ty: number, sp = HUNTER_SPEED * 0.85;
+          const gd = g ? Math.hypot(g.x - l.x, g.y - l.y) : 9999;
+          if (g && gd < 170) { // run away and shout
+            tx = l.x + (l.x - g.x) * 2; ty = l.y + (l.y - g.y) * 2; sp = HUNTER_SPEED;
+            if (now > b.scared) { b.scared = now + 6000; l.shoutUntil = now + 2500; send("shout", { id: b.id }); }
+          } else if (keyMask === 31) { tx = EXIT.x; ty = EXIT.y; }
+          else {
+            const k = KEYS.filter((key) => !(keyMask & (1 << key.id))).sort((a, c) => Math.hypot(a.x - l.x, a.y - l.y) - Math.hypot(c.x - l.x, c.y - l.y))[mates.indexOf(b) % 2];
+            if (k) { tx = k.x; ty = k.y; } else { const w = BOT_PATROL[b.wander]!; tx = w[0]; ty = w[1]; if (Math.hypot(tx - l.x, ty - l.y) < 40) b.wander = (b.wander + 1) % BOT_PATROL.length; }
+          }
+          if (MAP_ID === "hotel" && (ty < 500) !== (l.y < 500)) {
+            const a = LIFTS[l.y < 500 ? 0 : 1]!, o = LIFTS[l.y < 500 ? 1 : 0]!;
+            if (Math.hypot(a.x - l.x, a.y - l.y) < 30) { l.x = l.tx = o.x; l.y = l.ty = o.y + (o.floor === 2 ? 40 : -40); }
+            tx = a.x; ty = a.y;
+          }
+          let ang = Math.atan2(ty - l.y, tx - l.x) + b.dir;
+          const st = sp * dt; const p = move(l.x, l.y, Math.cos(ang) * st, Math.sin(ang) * st);
+          if (Math.hypot(p.x - l.x, p.y - l.y) < st * 0.3) { b.stuck += dt; if (b.stuck > 0.25) { b.dir = b.dir ? -b.dir : Math.PI / 2; b.stuck = 0; } } else if (b.dir && Math.random() < dt * 0.8) b.dir = 0;
+          ang = Math.atan2(p.y - l.y, p.x - l.x);
+          l.x = l.tx = p.x; l.y = l.ty = p.y; l.moving = true; l.yaw = -ang - Math.PI / 2;
+          KEYS.forEach((key) => { if (!(keyMask & (1 << key.id)) && Math.hypot(key.x - l.x, key.y - l.y) < 34) gainKeys(1 << key.id, false); });
+          if (keyMask === 31 && Math.hypot(EXIT.x - l.x, EXIT.y - l.y) < EXIT.r) setStatus(b.id, "escaped");
+          else if (ghostId && ghostId !== BOT_GHOST_ID && gd < CATCH_DIST) { setStatus(b.id, "caught"); send("caught", { id: b.id }); }
+        } else l.moving = false;
+        if (now - b.send > 100) { b.send = now; send("pos", { id: b.id, x: Math.round(l.x), y: Math.round(l.y), a: Math.round(l.yaw * 100) / 100, m: l.moving, st: l.status, k: keyMask, b: 0 }); }
+      }
+    };
     let mapT = 0;
     const drawMap = () => {
       const c = mapRef.current; const g = c?.getContext("2d"); if (!c || !g) return;
@@ -241,6 +286,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       for (const [id, l] of Object.entries(live)) if (id !== me) { l.x += (l.tx - l.x) * Math.min(1, dt * 12); l.y += (l.ty - l.y) * Math.min(1, dt * 12); }
 
       if (bot && isHost && !countdown && !ended) runBot(now, dt);
+      if (mates.length && isHost && !countdown && !ended) runMates(now, dt);
       if (now - mapT > 120) { mapT = now; drawMap(); }
       const npcs = npcsAt(t);
       if (!amGhost && meL.status === "alive" && !countdown && !ended) {
@@ -319,7 +365,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
           {!amGhost && <span className="flex items-center gap-1"><Battery className="size-4" />{Math.round(hud.battery)}%</span>}
         </div>
         <div className="flex flex-1 flex-wrap justify-center gap-1">
-          {players.filter((p) => p.role === "hunter").map((p) => {
+          {all.filter((p) => p.role === "hunter").map((p) => {
             const st = hud.statuses[p.id] ?? "alive";
             return (
               <div key={p.id} className={`flex items-center gap-1 rounded bg-card/80 px-1.5 py-0.5 text-xs ${st === "caught" ? "opacity-40 grayscale" : ""}`}>

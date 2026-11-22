@@ -38,3 +38,4 @@ use the editor.
 - Admin is the first profile, stored in `admin_profiles` (no client access) and checked via the `is_admin(id, kode_id)` RPC. Why: no Cloud Auth; roles must not live on profiles or in localStorage.
 - The admin drone spectates via the same `game-<code>` broadcast channel and sends a `drone` event that players' scenes render. Why: no extra server state.
 - Maps share one room grid; `applyMap(id)` in game.ts swaps the live `ROOMS/WALLS/DOORS` bindings and scene3d draws per-map atmosphere from `opts.map`; the room's map lives in `rooms.map`. Why: keys, spawns and ghost paths stay valid on every map.
+- Solo/partial squads are padded to 4 hunters with `squadBots()` (deterministic ids `bot-mate-N`), simulated by the host and broadcast as normal `pos` events. Why: same serverless pattern as the AI ghost.

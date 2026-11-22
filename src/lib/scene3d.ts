@@ -132,7 +132,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
   scene.background = new THREE.Color(fogCol);
   scene.fog = new THREE.FogExp2(fogCol, opts.drone ? 0.035 : opts.amGhost ? 0.035 : 0.11);
   if (opts.drone) scene.add(new THREE.HemisphereLight(0x8899cc, 0x221111, 1.4));
-  const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 60);
+  const camera = new THREE.PerspectiveCamera(72, 1, 0.05, opts.drone ? 260 : 60);
   camera.rotation.order = "YXZ";
   scene.add(camera);
   scene.add(new THREE.HemisphereLight(opts.amGhost ? 0xc9a0ff : 0x2a2440, opts.amGhost ? 0x402050 : 0x080404, opts.amGhost ? 2.6 : LOW_END ? 0.32 : 0.22));
@@ -141,6 +141,8 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
   const nv = new THREE.AmbientLight(0x80ff9a, 0); scene.add(nv);
 
   // floors and ceilings per room
+  const ceilings: THREE.Mesh[] = [];
+  let nvOn = false;
   for (const r of ROOMS) {
     const outdoor = MAP === "kuburan" || (MAP === "rumah" && r.name.startsWith("Kuburan"));
     const tex = MAP === "rumahsakit" ? tileTex("#c9d6cf", "#9fb0a8") : MAP === "hotel" ? carpetTex(r.y < 500 ? "#5a1018" : "#18304a") : outdoor ? canvasTex((g, s) => { g.fillStyle = "#1a2414"; g.fillRect(0, 0, s, s); for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${40 + Math.random() * 40},${60 + Math.random() * 50},30,.6)`; g.fillRect(Math.random() * s, Math.random() * s, 2, 5); } }, 1) : woodTex(r.floor === "#18222a" ? "#2b3a40" : "#4a2e1e");
@@ -149,7 +151,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
     f.rotation.x = -Math.PI / 2; f.position.set((r.x + r.w / 2) * U, 0, (r.y + r.h / 2) * U); scene.add(f);
     if (!outdoor) {
       const c = new THREE.Mesh(new THREE.PlaneGeometry(r.w * U, r.h * U), Mat({ color: 0x1a1414, roughness: 1 }));
-      c.rotation.x = Math.PI / 2; c.position.set((r.x + r.w / 2) * U, WALL_H, (r.y + r.h / 2) * U); scene.add(c);
+      c.rotation.x = Math.PI / 2; c.position.set((r.x + r.w / 2) * U, WALL_H, (r.y + r.h / 2) * U); scene.add(c); ceilings.push(c);
     }
   }
   // walls & furniture (first boxes are structural walls; thin ones => walls)
@@ -288,6 +290,12 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
       const bob = st.firstPerson ? Math.sin(bobT) * 0.04 : 0;
       const shake = st.near > 0.55 ? (Math.random() - 0.5) * st.near * 0.03 : 0;
       camera.position.set(st.cam.x * U, st.camH ?? EYE + Math.abs(bob), st.cam.y * U);
+      if (opts.drone) {
+        // aerial: roofs vanish above the walls and fog thins with altitude so the arena stays readable
+        const h = st.camH ?? EYE; const above = h > WALL_H - 0.2;
+        for (const c of ceilings) c.visible = !above;
+        (scene.fog as THREE.FogExp2).density = (nvOn ? 0.012 : 0.035) / (1 + Math.max(0, h - 4) * 0.35);
+      }
       drone.visible = !!st.drone;
       if (st.drone) { drone.position.set(st.drone.x * U, st.drone.h + Math.sin(st.t * 2) * 0.03, st.drone.y * U); drone.rotation.y = st.drone.yaw; rotors.forEach((r, i) => { r.rotation.y = st.t * 40 + i; }); const on = Math.sin(st.t * 6) > 0; ledR.visible = on; ledG.visible = !on; }
       camera.rotation.set(st.pitch + shake, st.yaw, 0);
@@ -333,7 +341,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
       renderer.render(scene, camera);
     },
     setNightVision(on: boolean) {
-      nv.intensity = on ? 3.2 : 0;
+      nvOn = on; nv.intensity = on ? 3.2 : 0;
       (scene.fog as THREE.FogExp2).density = on ? 0.012 : 0.035;
       scene.background = new THREE.Color(on ? 0x0a2010 : fogCol);
       renderer.toneMappingExposure = on ? 1.6 : 1;

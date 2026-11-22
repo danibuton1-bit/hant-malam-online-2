@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Crosshair, Eye, RotateCcw, RotateCw } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Clapperboard, Crosshair, Eye, EyeOff, Film, Orbit, RotateCcw, RotateCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { batterySvg, characterSvg, CHARACTERS, exclaimSvg, ghostSvg, keySvg, kuntilanakSvg, hoodieSvg, loadImg, normalizeChar, pocongSvg, type CharId } from "@/lib/art";
 import { applyMap, BOT_GHOST_ID, GHOST_SPAWN, isMapId, npcsAt, WORLD, type MapId } from "@/lib/game";
 import { createScene } from "@/lib/scene3d";
 import { toContent } from "@/lib/orient";
 import { Joystick } from "./Joystick";
+import { squadBots } from "./Game";
 import { Button } from "./ui/button";
 
 /** Cinematic feel: all motion is critically damped toward a target, like a broadcast drone. */
-export const DRONE = { SPEED: 260, VERT: 2.2, MIN_H: 0.6, MAX_H: 9, ACCEL: 3.2, CAM_DAMP: 4, ROT_DAMP: 5, TURN: 1.6, FOLLOW_DIST: 170 };
+export const DRONE = { SPEED: 260, VERT: 2.2, MIN_H: 0.6, MAX_H: 40, ACCEL: 3.2, CAM_DAMP: 4, ROT_DAMP: 5, TURN: 1.6, FOLLOW_DIST: 170 };
+/** Ease-in-out for choreographed trailer shots. */
+export const ease = (x: number) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
+/** Trailer presets: crane rises 1.2m -> 30m tilting down; orbit circles the target 360 degrees. */
+export const SHOTS = { CRANE_S: 14, CRANE_LO: 1.2, CRANE_HI: 30, ORBIT_S: 24, ORBIT_R: 320, ORBIT_H: 14 };
+export type Shot = "crane" | "drop" | "orbit" | null;
 export const damp = (cur: number, target: number, k: number, dt: number) => target + (cur - target) * Math.exp(-k * dt);
 
 type P = { id: string; nama: string; karakter: string; role: string | null };
@@ -22,10 +28,15 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
   const keys = useRef<Record<string, boolean>>({});
   const [players, setPlayers] = useState<P[] | null>(null);
   const [follow, setFollow] = useState<string | null>(null);
+  const startShot = useRef<(k: Shot) => void>(() => {});
   const followRef = useRef<string | null>(null); followRef.current = follow;
   const [hud, setHud] = useState({ h: 3, startedAt: 0 });
   const [map, setMap] = useState<MapId>("rumah");
   const [nv, setNv] = useState(false);
+  const [clean, setClean] = useState(false);
+  const [bars, setBars] = useState(false);
+  const [shot, setShot] = useState<Shot>(null);
+  const shotRef = useRef<{ kind: Shot; t0: number; x: number; y: number; yaw: number }>({ kind: null, t0: 0, x: 0, y: 0, yaw: 0 });
   const nvRef = useRef<(on: boolean) => void>(() => {});
   useEffect(() => { nvRef.current(nv); }, [nv]);
 
@@ -38,6 +49,7 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
       ]);
       const m = isMapId(rm?.map) ? rm.map : "rumah"; applyMap(m); setMap(m);
       const ps: P[] = (data ?? []).map((p) => ({ id: p.profile_id, nama: p.nama, karakter: normalizeChar(p.karakter) ?? "raka", role: p.role }));
+      ps.push(...squadBots(ps).map((b) => ({ id: b.id, nama: b.nama, karakter: b.karakter, role: "hunter" })));
       if (!ps.some((p) => p.role === "ghost")) ps.push({ id: BOT_GHOST_ID, nama: "Hantu AI", karakter: "raka", role: "ghost" });
       setHud((h) => ({ ...h, startedAt: gs?.started_at ? new Date(gs.started_at).getTime() : Date.now() }));
       setPlayers(ps);
@@ -67,7 +79,7 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
     // drone state: position, velocity, height, yaw/pitch — rendered values chase targets smoothly
     const d = { x: WORLD.w / 2, y: WORLD.h / 2, h: 4, yaw: 0, pitch: -0.5, vx: 0, vy: 0, vh: 0, vyaw: 0 };
     const cam = { x: d.x, y: d.y, h: d.h, yaw: d.yaw, pitch: d.pitch };
-    const look = (dx: number, dy: number) => { d.yaw -= dx * 0.004; d.pitch = Math.max(-1.45, Math.min(0.5, d.pitch - dy * 0.004)); };
+    const look = (dx: number, dy: number) => { d.yaw -= dx * 0.004; d.pitch = Math.max(-1.55, Math.min(0.5, d.pitch - dy * 0.004)); };
     const cv = canvasRef.current!;
     let tid: number | null = null, x0 = 0, y0 = 0;
     const onPD = (e: PointerEvent) => { tid = e.pointerId; x0 = e.clientX; y0 = e.clientY; };
@@ -88,7 +100,22 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
       const it = turn.current + (k["arrowleft"] ? 1 : 0) - (k["arrowright"] ? 1 : 0);
       for (const l of Object.values(live)) { l.x = damp(l.x, l.tx, 10, dt); l.y = damp(l.y, l.ty, 10, dt); }
       const tgt = followRef.current ? live[followRef.current] : null;
-      if (tgt && Math.abs(ix) + Math.abs(iy) < 0.05) {
+      const sh = shotRef.current;
+      if (sh.kind && Math.abs(ix) + Math.abs(iy) + Math.abs(iv) + Math.abs(it) > 0.1) { sh.kind = null; setShot(null); }
+      if (sh.kind === "crane" || sh.kind === "drop") {
+        const p = ease((now - sh.t0) / 1000 / SHOTS.CRANE_S), u = sh.kind === "crane" ? p : 1 - p;
+        const cx = tgt ? tgt.x : sh.x, cy = tgt ? tgt.y : sh.y;
+        d.h = SHOTS.CRANE_LO + (SHOTS.CRANE_HI - SHOTS.CRANE_LO) * u;
+        const back = 40 + 110 * u; // pulls back a little while rising
+        d.x = damp(d.x, cx + Math.sin(sh.yaw) * back, 3, dt); d.y = damp(d.y, cy + Math.cos(sh.yaw) * back, 3, dt);
+        d.yaw = sh.yaw; d.pitch = -Math.atan2(d.h - 1, Math.max(0.3, back / 50)); d.vx = d.vy = d.vh = d.vyaw = 0;
+        if (p >= 1) { sh.kind = null; setShot(null); }
+      } else if (sh.kind === "orbit") {
+        const cx = tgt ? tgt.x : sh.x, cy = tgt ? tgt.y : sh.y;
+        const a = sh.yaw + ((now - sh.t0) / 1000 / SHOTS.ORBIT_S) * Math.PI * 2;
+        d.x = damp(d.x, cx + Math.sin(a) * SHOTS.ORBIT_R, 2.5, dt); d.y = damp(d.y, cy + Math.cos(a) * SHOTS.ORBIT_R, 2.5, dt);
+        d.h = damp(d.h, SHOTS.ORBIT_H, 1.5, dt); d.yaw = a; d.pitch = -Math.atan2(d.h - 1, SHOTS.ORBIT_R / 50); d.vx = d.vy = d.vh = d.vyaw = 0;
+      } else if (tgt && Math.abs(ix) + Math.abs(iy) < 0.05) {
         // orbit-follow: stay behind-and-above the player, looking at them
         const fx = tgt.x + Math.sin(d.yaw) * DRONE.FOLLOW_DIST, fy = tgt.y + Math.cos(d.yaw) * DRONE.FOLLOW_DIST;
         d.vx = damp(d.vx, (fx - d.x) * 2, DRONE.ACCEL, dt); d.vy = damp(d.vy, (fy - d.y) * 2, DRONE.ACCEL, dt);
@@ -98,9 +125,10 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
         const sx = ix * Math.cos(d.yaw) + iy * Math.sin(d.yaw), sy = -ix * Math.sin(d.yaw) + iy * Math.cos(d.yaw);
         d.vx = damp(d.vx, sx * DRONE.SPEED, DRONE.ACCEL, dt); d.vy = damp(d.vy, sy * DRONE.SPEED, DRONE.ACCEL, dt);
       }
-      d.vh = damp(d.vh, iv * DRONE.VERT, DRONE.ACCEL, dt);
+      d.vh = damp(d.vh, iv * DRONE.VERT * (1 + d.h / 6), DRONE.ACCEL, dt);
       d.vyaw = damp(d.vyaw, it * DRONE.TURN, DRONE.ACCEL, dt);
-      d.x = Math.max(20, Math.min(WORLD.w - 20, d.x + d.vx * dt)); d.y = Math.max(20, Math.min(WORLD.h - 20, d.y + d.vy * dt));
+      d.x = Math.max(-300, Math.min(WORLD.w + 300, d.x)); d.y = Math.max(-300, Math.min(WORLD.h + 300, d.y));
+      if (!sh.kind) d.x = Math.max(20, Math.min(WORLD.w - 20, d.x + d.vx * dt)); d.y = Math.max(20, Math.min(WORLD.h - 20, d.y + d.vy * dt));
       d.h = Math.max(DRONE.MIN_H, Math.min(DRONE.MAX_H, d.h + d.vh * dt)); d.yaw += d.vyaw * dt;
       cam.x = damp(cam.x, d.x, DRONE.CAM_DAMP, dt); cam.y = damp(cam.y, d.y, DRONE.CAM_DAMP, dt); cam.h = damp(cam.h, d.h, DRONE.CAM_DAMP, dt);
       cam.yaw = damp(cam.yaw, d.yaw, DRONE.ROT_DAMP, dt); cam.pitch = damp(cam.pitch, d.pitch, DRONE.ROT_DAMP, dt);
@@ -111,6 +139,7 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
       if (now - lastSend > 100) { lastSend = now; void ch.send({ type: "broadcast", event: "drone", payload: { x: Math.round(cam.x), y: Math.round(cam.y), h: Math.round(cam.h * 100) / 100, yaw: Math.round(cam.yaw * 100) / 100 } }); }
       if (now - hudT > 250) { hudT = now; setHud((s) => ({ ...s, h: cam.h })); }
     };
+    startShot.current = (kind: Shot) => { shotRef.current = { kind, t0: performance.now(), x: d.x - Math.sin(d.yaw) * 60, y: d.y - Math.cos(d.yaw) * 60, yaw: d.yaw }; setShot(kind); };
     raf = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(raf); void supabase.removeChannel(ch); sc.dispose();
@@ -130,6 +159,9 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
   return (
     <div className="fixed inset-0 bg-background">
       <canvas ref={canvasRef} className="h-full w-full touch-none" />
+      {bars && <><div className="pointer-events-none absolute inset-x-0 top-0 h-[12%] bg-void" /><div className="pointer-events-none absolute inset-x-0 bottom-0 h-[12%] bg-void" /></>}
+      {clean && <button onClick={() => setClean(false)} aria-label="Tampilkan kontrol" className="absolute right-1 top-1 z-30 rounded-full p-2 text-foreground/20"><Eye className="size-4" /></button>}
+      {!clean && <>
       <div className="pointer-events-none absolute inset-0 border-[3px] border-primary/30" />
       <div className="absolute left-2 top-2 flex items-center gap-2">
         <Button size="sm" variant="secondary" onClick={onExit}><ArrowLeft /> Keluar</Button>
@@ -137,6 +169,14 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
       </div>
       <button onClick={cycle} className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-card/80 px-3 py-2 text-xs font-bold"><Crosshair className="size-4 text-primary" />{fName ? `Ikuti: ${fName}` : "Bebas"}</button>
       <button onClick={() => setNv((v) => !v)} aria-pressed={nv} className={`absolute right-2 top-12 flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${nv ? "bg-chart-2 text-background" : "bg-card/80"}`}><Eye className="size-4" />NIGHT VISION {nv ? "ON" : "OFF"}</button>
+      <div className="absolute right-2 top-24 flex flex-col items-end gap-1.5">
+        <button onClick={() => startShot.current(shot === "crane" ? null : "crane")} className={`flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${shot === "crane" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><ArrowUp className="size-4" />CRANE NAIK</button>
+        <button onClick={() => startShot.current(shot === "drop" ? null : "drop")} className={`flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${shot === "drop" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><ArrowDown className="size-4" />CRANE TURUN</button>
+        <button onClick={() => startShot.current(shot === "orbit" ? null : "orbit")} className={`flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${shot === "orbit" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><Orbit className="size-4" />ORBIT 360°</button>
+        <button onClick={() => setBars((b) => !b)} aria-pressed={bars} className={`flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${bars ? "bg-gold text-background" : "bg-card/80"}`}><Film className="size-4" />SINEMA 21:9</button>
+        <button onClick={() => setClean(true)} className="flex items-center gap-1 rounded-md bg-card/80 px-3 py-2 text-xs font-bold"><EyeOff className="size-4" />LAYAR BERSIH</button>
+      </div>
+      {shot && <div className="pointer-events-none absolute left-1/2 top-12 -translate-x-1/2 rounded-md bg-card/80 px-3 py-1 text-xs font-bold"><Clapperboard className="mr-1 inline size-3" />SHOT OTOMATIS · sentuh kontrol untuk berhenti</div>}
       {nv && <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,hsl(var(--background)/.75))] mix-blend-multiply" />}
       <div className="absolute bottom-6 left-6" onPointerDown={(e) => e.stopPropagation()}><Joystick vec={joy} /></div>
       <div className="absolute bottom-6 right-6 grid grid-cols-3 gap-2">
@@ -151,6 +191,7 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
         <span />
       </div>
       <div className="pointer-events-none absolute bottom-1 left-1/2 hidden -translate-x-1/2 text-[10px] text-muted-foreground sm:block">WASD gerak · E/Spasi naik · Q/Shift turun · Panah kiri/kanan putar · seret layar untuk melihat</div>
+      </>}
     </div>
   );
 }
