@@ -102,6 +102,8 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       if (p.st !== "alive") setStatus(p.id, p.st);
       gainKeys(p.k, false); batMask |= p.b;
     });
+    let droneAt = 0; const droneSt = { x: 0, y: 0, h: 0, yaw: 0 };
+    ch.on("broadcast", { event: "drone" }, ({ payload }) => { Object.assign(droneSt, payload as typeof droneSt); droneAt = performance.now(); });
     ch.on("broadcast", { event: "caught" }, ({ payload }) => setStatus((payload as { id: string }).id, "caught"));
     ch.on("broadcast", { event: "shout" }, ({ payload }) => { const l = live[(payload as { id: string }).id]; if (l) { l.shoutUntil = performance.now() + 2500; audio.shout(); } });
     const showEmote = (id: string, e: string, t?: string) => {
@@ -265,7 +267,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       let cam = meL;
       if (meL.status !== "alive") { const alive = Object.entries(live).find(([id, l]) => l.status === "alive" && all.find((p) => p.id === id)?.role === "hunter"); if (alive) cam = alive[1]; }
       const fp = cam === meL;
-      sc.frame({ dt, t, cam, yaw: fp ? meL.yaw : cam.yaw, pitch: fp ? pitch : 0, moving: meL.moving, battery: meL.battery, near, keyMask, batMask, npcs, firstPerson: fp && meL.status === "alive",
+      sc.frame({ dt, t, cam, yaw: fp ? meL.yaw : cam.yaw, pitch: fp ? pitch : 0, moving: meL.moving, battery: meL.battery, near, keyMask, batMask, npcs, firstPerson: fp && meL.status === "alive", drone: now - droneAt < 2000 ? droneSt : null,
         others: all.filter((p) => p.id !== me).map((p) => { const l = live[p.id]!; return { id: p.id, x: l.x, y: l.y, yaw: l.yaw, ghost: p.role === "ghost", shouting: now < l.shoutUntil, visible: l.status === "alive" && l !== cam, moving: l.moving, pitch: l.pitch, emote: now < l.emoteUntil && !(PAIR_EMOTES.includes(l.emote ?? "") && l.moving) ? l.emote : null }; }) });
       if (now - hudT > 200) {
         hudT = now;

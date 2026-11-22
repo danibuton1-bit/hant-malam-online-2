@@ -7,3 +7,11 @@
 - [x] Minimap, ghost night vision
 - [x] Animated emotes incl. hug/kiss to nearest player
 - [x] Low-end Android performance mode
+- [x] Admin = first registered ID card, admin dashboard with live matches
+- [x] Cinematic admin drone (joystick, up/down, rotate, follow player, visible to players)
+- [ ] Admin ID card design (gold border, ADMIN badge)
+- [ ] Admin sound manager (music + per-ghost sound effects)
+- [ ] New hoodie tentacle ghost from uploaded image
+- [ ] Map mode picker: Rumah Tua, Rumah Sakit (flicker), Kuburan (fog), Hotel 2 lantai + lift
+- [ ] Squad lobby (empty until invite, invited stand together, captain starts) + 10s countdown
+- [ ] Chat new-message notification popup

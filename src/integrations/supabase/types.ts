@@ -14,6 +14,29 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_profiles: {
+        Row: {
+          created_at: string
+          profile_id: string
+        }
+        Insert: {
+          created_at?: string
+          profile_id: string
+        }
+        Update: {
+          created_at?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_profiles_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_messages: {
         Row: {
           body: string
@@ -251,6 +274,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      is_admin: { Args: { p_id: string; p_kode: string }; Returns: boolean }
       list_dm: {
         Args: { p_id: string; p_kode: string; p_other: string }
         Returns: {

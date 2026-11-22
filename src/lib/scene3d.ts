@@ -38,7 +38,7 @@ const wallTex = canvasTex((g, s) => {
 
 type Ent = { sprite: THREE.Sprite; light?: THREE.PointLight };
 
-export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "ghost"; amGhost: boolean; imgs: Record<string, string> }) {
+export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "ghost"; amGhost: boolean; imgs: Record<string, string>; drone?: boolean }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !MOBILE && !LOW_END, powerPreference: LOW_END ? "low-power" : "high-performance" });
   renderer.setPixelRatio(LOW_END ? 0.75 : MOBILE ? Math.min(1.25, window.devicePixelRatio || 1) : Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -47,7 +47,8 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
   // ghost sees in the dark: bright violet "night vision", thin fog
   const fogCol = opts.amGhost ? 0x1c0a2a : 0x000000;
   scene.background = new THREE.Color(fogCol);
-  scene.fog = new THREE.FogExp2(fogCol, opts.amGhost ? 0.035 : 0.11);
+  scene.fog = new THREE.FogExp2(fogCol, opts.drone ? 0.035 : opts.amGhost ? 0.035 : 0.11);
+  if (opts.drone) scene.add(new THREE.HemisphereLight(0x8899cc, 0x221111, 1.4));
   const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 60);
   camera.rotation.order = "YXZ";
   scene.add(camera);
@@ -155,6 +156,17 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
   }
   vm.traverse((o) => { o.renderOrder = 10; const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) { m.depthTest = false; (m as THREE.MeshStandardMaterial).fog = false; } });
 
+  // admin cinematic drone: quadcopter with spinning rotors and blinking LEDs, visible to players
+  const drone = new THREE.Group(); drone.visible = false; scene.add(drone);
+  const dBody = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), Mat({ color: 0x1a1a1f, metalness: 0.6, roughness: 0.4 })); drone.add(dBody);
+  const rotors: THREE.Mesh[] = [];
+  for (const [ax, az] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.03, 0.04), Mat({ color: 0x2a2a30 })); arm.position.set(ax * 0.16, 0, az * 0.16); arm.rotation.y = ax * az > 0 ? -Math.PI / 4 : Math.PI / 4; drone.add(arm);
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.01, 0.04), Mat({ color: 0xbbbbbb, transparent: true, opacity: 0.7 })); r.position.set(ax * 0.27, 0.06, az * 0.27); drone.add(r); rotors.push(r);
+  }
+  const ledR = new THREE.Mesh(new THREE.SphereGeometry(0.03), new THREE.MeshBasicMaterial({ color: 0xff2030 })); ledR.position.set(-0.12, -0.06, 0.17);
+  const ledG = new THREE.Mesh(new THREE.SphereGeometry(0.03), new THREE.MeshBasicMaterial({ color: 0x30ff60 })); ledG.position.set(0.12, -0.06, 0.17);
+  const dLight = new THREE.PointLight(0xff3040, 1.2, 3); dLight.position.y = -0.15; drone.add(ledR, ledG, dLight);
   let bobT = 0, vmX = 0;
   return {
     resize() {
@@ -176,7 +188,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
       dt: number; t: number; cam: { x: number; y: number }; yaw: number; pitch: number; moving: boolean; battery: number; near: number;
       keyMask: number; batMask: number; npcs: { kind: string; x: number; y: number }[];
       others: { id: string; x: number; y: number; yaw: number; visible: boolean; shouting: boolean; ghost: boolean; moving: boolean; pitch: number; emote: string | null }[];
-      firstPerson: boolean;
+      firstPerson: boolean; camH?: number; drone?: { x: number; y: number; h: number; yaw: number } | null;
     }) {
       for (const dr of doors) {
         const near = [st.cam, ...st.others.filter((o) => o.visible || o.ghost)].some((p) => Math.hypot(p.x - dr.d.x, p.y - dr.d.y) < 120);
@@ -188,12 +200,15 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
       if (st.moving) bobT += st.dt * 9;
       const bob = st.firstPerson ? Math.sin(bobT) * 0.04 : 0;
       const shake = st.near > 0.55 ? (Math.random() - 0.5) * st.near * 0.03 : 0;
-      camera.position.set(st.cam.x * U, EYE + Math.abs(bob), st.cam.y * U);
+      camera.position.set(st.cam.x * U, st.camH ?? EYE + Math.abs(bob), st.cam.y * U);
+      drone.visible = !!st.drone;
+      if (st.drone) { drone.position.set(st.drone.x * U, st.drone.h + Math.sin(st.t * 2) * 0.03, st.drone.y * U); drone.rotation.y = st.drone.yaw; rotors.forEach((r, i) => { r.rotation.y = st.t * 40 + i; }); const on = Math.sin(st.t * 6) > 0; ledR.visible = on; ledG.visible = !on; }
       camera.rotation.set(st.pitch + shake, st.yaw, 0);
       vm.visible = st.firstPerson;
       vm.position.set(vmX + Math.cos(bobT * 0.5) * 0.02, bob * 0.6, 0);
       // flashlight power
-      if (!opts.amGhost) {
+      if (opts.drone) flash.intensity = 0;
+      else if (!opts.amGhost) {
         const flick = st.battery < 20 ? (Math.random() < 0.15 ? 0.2 : 1) : Math.random() < 0.008 ? 0.5 : 1;
         const p = st.battery <= 0 ? 0.04 : (0.25 + st.battery / 100 * 0.75) * flick;
         flash.intensity = 45 * p; flash.distance = 8 + 16 * p;

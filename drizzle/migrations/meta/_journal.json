@@ -15,6 +15,13 @@
       "when": 1795339684925,
       "tag": "0001_chat_friends_roles_qila",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795341396666,
+      "tag": "0002_admin_profiles",
+      "breakpoints": true
     }
   ]
 }

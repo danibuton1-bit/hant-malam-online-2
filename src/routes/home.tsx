@@ -12,6 +12,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { CHARACTERS } from "@/lib/art";
 import { EMOTE_MS, PAIR_EMOTES } from "@/lib/emotes";
 import { roomCode } from "@/lib/game";
+import { useIsAdmin } from "@/lib/admin";
+import { Link } from "@tanstack/react-router";
+import { Crown } from "lucide-react";
 
 export const Route = createFileRoute("/home")({
   head: () => ({
@@ -45,6 +48,7 @@ async function findMatch(profileId: string): Promise<string | null> {
 function Lobby() {
   const { ready, account, online, setRoom } = useApp();
   const nav = useNavigate();
+  const isAdmin = useIsAdmin(account);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [emote, setEmote] = useState<string | null>(null);
@@ -84,6 +88,7 @@ function Lobby() {
         <div className="w-56"><ProfileCorner /></div>
         <img src={svgUrl(emblemSvg())} alt="Hantu Malam" className="mx-auto hidden size-20 sm:block" />
         <div className="flex items-center gap-2 rounded-lg border border-border bg-card/80 px-3 py-2 text-xs"><Users className="size-4 text-primary" />{online.length} online</div>
+        {isAdmin && <Link to="/admin" className="flex items-center gap-1 rounded-lg border border-gold/70 bg-card/80 px-3 py-2 text-xs font-bold text-gold"><Crown className="size-4" />ADMIN</Link>}
         <SocialPanel />
         <MuteButton />
       </header>
