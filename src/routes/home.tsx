@@ -6,6 +6,7 @@ import { SocialPanel } from "@/components/Social";
 import { emblemSvg, normalizeChar, svgUrl } from "@/lib/art";
 import { useApp } from "@/components/AppState";
 import { MuteButton } from "@/components/MuteButton";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import { ProfileCorner } from "@/components/ProfileCorner";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -91,6 +92,7 @@ function Lobby() {
         {isAdmin && <Link to="/admin" className="flex items-center gap-1 rounded-lg border border-gold/70 bg-card/80 px-3 py-2 text-xs font-bold text-gold"><Crown className="size-4" />ADMIN</Link>}
         <SocialPanel />
         <MuteButton />
+        <SettingsDialog />
       </header>
 
       {/* character stage: you + up to two online players nearby */}

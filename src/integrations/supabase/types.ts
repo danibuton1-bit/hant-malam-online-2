@@ -14,6 +14,32 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_locks: {
+        Row: {
+          pass_hash: string
+          profile_id: string
+          updated_at: string
+        }
+        Insert: {
+          pass_hash: string
+          profile_id: string
+          updated_at?: string
+        }
+        Update: {
+          pass_hash?: string
+          profile_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_locks_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       admin_profiles: {
         Row: {
           created_at: string
@@ -277,6 +303,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      has_password: { Args: { p_id: string; p_kode: string }; Returns: boolean }
       is_admin: { Args: { p_id: string; p_kode: string }; Returns: boolean }
       list_dm: {
         Args: { p_id: string; p_kode: string; p_other: string }
@@ -326,6 +353,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      login_secure: {
+        Args: { p_kode: string; p_nama: string; p_pass: string }
+        Returns: Json
+      }
       me_ok: { Args: { p_id: string; p_kode: string }; Returns: boolean }
       respond_friend: {
         Args: {
@@ -361,6 +392,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      set_password: {
+        Args: { p_id: string; p_kode: string; p_new: string; p_old: string }
+        Returns: undefined
       }
     }
     Enums: {

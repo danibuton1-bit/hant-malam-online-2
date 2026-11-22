@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { loginIdCard, parseQr } from "@/lib/account";
 import { decodeQrFromFile } from "@/lib/idcard";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -29,13 +30,17 @@ function Login() {
   const [nama, setNama] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [pass, setPass] = useState("");
+  const [needPass, setNeedPass] = useState(false);
 
   async function enter(k: string, n: string) {
     setBusy(true); setErr("");
     try {
-      const p = await loginIdCard(k, n);
-      if (!p) { setErr("ID Card tidak ditemukan. Cek lagi Kode ID dan nama."); return; }
-      setAccount(p); void nav({ to: "/home" });
+      const r = await loginIdCard(k, n, pass);
+      if (r.status === "notfound") { setErr("ID Card tidak ditemukan. Cek lagi Kode ID dan nama."); return; }
+      if (r.status === "need_password") { setKode(k); setNama(n); setNeedPass(true); setErr("Akun ini dikunci. Masukkan password akun."); return; }
+      if (r.status === "wrong") { setErr("Password salah."); return; }
+      setAccount(r.profile); void nav({ to: "/home" });
     } catch (e) { setErr(e instanceof Error ? e.message : "Gagal login"); }
     finally { setBusy(false); }
   }
@@ -63,8 +68,9 @@ function Login() {
       <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void enter(kode, nama); }}>
         <div className="space-y-2"><Label htmlFor="kode">Kode ID</Label><Input id="kode" value={kode} onChange={(e) => setKode(e.target.value.toUpperCase())} placeholder="HM-1234" className="h-12 tracking-widest" /></div>
         <div className="space-y-2"><Label htmlFor="nm">Nama</Label><Input id="nm" value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Nama di ID Card" className="h-12" /></div>
+        {needPass && <div className="space-y-2"><Label htmlFor="pw">Password Akun</Label><PasswordInput id="pw" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="Password" className="h-12" autoFocus /></div>}
         {err && <p className="text-sm text-destructive">{err}</p>}
-        <Button type="submit" size="lg" className="h-14 w-full text-lg glow-blood" disabled={busy || !/^HM-\d{4}$/.test(kode) || !nama.trim()}>{busy ? "Mengecek..." : "MASUK"}</Button>
+        <Button type="submit" size="lg" className="h-14 w-full text-lg glow-blood" disabled={busy || !/^HM-\d{4}$/.test(kode) || !nama.trim() || (needPass && !pass)}>{busy ? "Mengecek..." : "MASUK"}</Button>
       </form>
     </main>
   );

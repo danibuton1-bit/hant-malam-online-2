@@ -35,11 +35,23 @@ export async function createProfile(nama: string, tanggal: string, karakter: Cha
   return data as unknown as Profile;
 }
 
-export async function loginIdCard(kode: string, nama: string | null) {
-  const { data, error } = await supabase.rpc("login_id_card", { p_kode: kode, p_nama: nama as string });
+export type LoginResult = { status: "ok"; profile: Profile } | { status: "notfound" | "need_password" | "wrong" };
+export async function loginIdCard(kode: string, nama: string, password = ""): Promise<LoginResult> {
+  const { data, error } = await supabase.rpc("login_secure", { p_kode: kode, p_nama: nama, p_pass: password });
   if (error) throw new Error(error.message);
-  const row = (data as unknown as Profile[])[0];
-  return row ?? null;
+  return data as unknown as LoginResult;
+}
+
+export async function hasPassword(p: Profile) {
+  const { data, error } = await supabase.rpc("has_password", { p_id: p.id, p_kode: p.kode_id });
+  if (error) throw new Error(error.message);
+  return Boolean(data);
+}
+
+/** Set, change (needs old) or remove (newPass "") the account lock password. */
+export async function setPassword(p: Profile, oldPass: string, newPass: string) {
+  const { error } = await supabase.rpc("set_password", { p_id: p.id, p_kode: p.kode_id, p_old: oldPass, p_new: newPass });
+  if (error) throw new Error(error.message);
 }
 
 export const qrPayload = (p: Profile) => `HANTUMALAM|${p.kode_id}|${p.username}`;

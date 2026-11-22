@@ -38,7 +38,7 @@ function Landing() {
     <main className="mx-auto flex min-h-full max-w-md flex-col items-center justify-center gap-6 px-6 py-10">
       <Logo className="w-full rounded-xl glow-blood" />
       <h1 className="font-horror text-drip text-center text-4xl text-primary">HANTU MALAM</h1>
-      <p className="-mt-4 text-center text-sm text-muted-foreground">Tanpa email. Tanpa password. Cukup ID Card.</p>
+      <p className="-mt-4 text-center text-sm text-muted-foreground">Tanpa email. Cukup ID Card — kunci dengan password kalau mau.</p>
       <Button asChild size="lg" className="h-16 w-full text-lg glow-blood"><Link to="/daftar">DAFTAR AKUN BARU</Link></Button>
       <Button asChild size="lg" variant="secondary" className="h-16 w-full text-lg"><Link to="/login">LOGIN PAKAI ID CARD</Link></Button>
     </main>
