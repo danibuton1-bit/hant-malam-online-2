@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Lock, LockOpen, Settings } from "lucide-react";
-import { toast } from "sonner";
 import { useApp } from "./AppState";
 import { PasswordInput } from "./PasswordInput";
 import { Button } from "./ui/button";
@@ -14,7 +13,7 @@ export function SettingsDialog() {
   const [open, setOpen] = useState(false);
   const [locked, setLocked] = useState<boolean | null>(null);
   const [oldP, setOldP] = useState(""); const [p1, setP1] = useState(""); const [p2, setP2] = useState("");
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [ok, setOk] = useState("");
   useEffect(() => {
     if (!open || !account) return;
     setOldP(""); setP1(""); setP2(""); setErr("");
@@ -24,7 +23,7 @@ export function SettingsDialog() {
 
   async function save(remove: boolean) {
     if (!account) return;
-    setErr("");
+    setErr(""); setOk("");
     if (!remove) {
       if (p1.length < 4) { setErr("Password minimal 4 karakter."); return; }
       if (p1 !== p2) { setErr("Konfirmasi password tidak sama."); return; }
@@ -32,7 +31,7 @@ export function SettingsDialog() {
     setBusy(true);
     try {
       await setPassword(account, oldP, remove ? "" : p1);
-      toast.success(remove ? "Kunci akun dimatikan" : "Akun terkunci dengan password");
+      setOk(remove ? "Kunci akun dimatikan." : "Akun sudah terkunci dengan password.");
       setLocked(!remove); setOldP(""); setP1(""); setP2("");
     } catch (e) { setErr(e instanceof Error ? e.message : "Gagal menyimpan"); }
     finally { setBusy(false); }
@@ -55,6 +54,7 @@ export function SettingsDialog() {
           <div className="space-y-1"><Label htmlFor="np">{locked ? "Password baru" : "Password"}</Label><PasswordInput id="np" value={p1} onChange={(e) => setP1(e.target.value)} /></div>
           <div className="space-y-1"><Label htmlFor="cp">Ulangi password</Label><PasswordInput id="cp" value={p2} onChange={(e) => setP2(e.target.value)} /></div>
           {err && <p className="text-sm text-destructive">{err}</p>}
+          {ok && <p className="text-sm text-primary">{ok}</p>}
           <Button className="w-full" disabled={busy || locked === null || (locked && !oldP)} onClick={() => void save(false)}>{locked ? "GANTI PASSWORD" : "KUNCI AKUN"}</Button>
           {locked && <Button variant="ghost" className="w-full" disabled={busy || !oldP} onClick={() => void save(true)}>Matikan kunci akun</Button>}
         </section>

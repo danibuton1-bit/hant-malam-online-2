@@ -35,7 +35,7 @@ export async function createProfile(nama: string, tanggal: string, karakter: Cha
   return data as unknown as Profile;
 }
 
-export type LoginResult = { status: "ok"; profile: Profile } | { status: "notfound" | "need_password" | "wrong" };
+export type LoginResult = { status: "ok"; profile: Profile } | { status: "notfound" } | { status: "need_password" } | { status: "wrong" };
 export async function loginIdCard(kode: string, nama: string, password = ""): Promise<LoginResult> {
   const { data, error } = await supabase.rpc("login_secure", { p_kode: kode, p_nama: nama, p_pass: password });
   if (error) throw new Error(error.message);

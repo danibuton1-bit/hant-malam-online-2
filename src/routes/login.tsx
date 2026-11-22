@@ -40,7 +40,7 @@ function Login() {
       if (r.status === "notfound") { setErr("ID Card tidak ditemukan. Cek lagi Kode ID dan nama."); return; }
       if (r.status === "need_password") { setKode(k); setNama(n); setNeedPass(true); setErr("Akun ini dikunci. Masukkan password akun."); return; }
       if (r.status === "wrong") { setErr("Password salah."); return; }
-      setAccount(r.profile); void nav({ to: "/home" });
+      if (r.status !== "ok") return; setAccount(r.profile); void nav({ to: "/home" });
     } catch (e) { setErr(e instanceof Error ? e.message : "Gagal login"); }
     finally { setBusy(false); }
   }
