@@ -5,6 +5,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
 const ICE = [{ urls: "stun:stun.l.google.com:19302" }];
+const MIC_OK = "hm-mic-ok";
+/** True once the player allowed the mic (remembered on this device) or the browser already granted it. */
+async function micAllowed(): Promise<boolean> {
+  try { if (localStorage.getItem(MIC_OK) === "1") return true; } catch { /* storage blocked */ }
+  try { const p = await navigator.permissions?.query({ name: "microphone" as PermissionName }); return p?.state === "granted"; } catch { return false; }
+}
 type Sig = { from: string; to?: string; kind: "hello" | "offer" | "answer" | "ice" | "bye"; data?: unknown };
 
 /** Voice chat: peer-to-peer audio (WebRTC) signalled over a realtime channel per room. Asks politely before the browser prompt. */
@@ -28,7 +34,8 @@ export function MicButton({ code, me, className = "" }: { code: string; me: stri
     setAsk(false); setErr("");
     let stream: MediaStream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
-    catch { setErr("Mic diblokir. Buka pengaturan situs di browser, ubah Mikrofon ke \"Izinkan\", lalu coba lagi."); return; }
+    catch { try { localStorage.removeItem(MIC_OK); } catch { /* ignore */ } setErr("Mic diblokir. Buka pengaturan situs di browser, ubah Mikrofon ke \"Izinkan\", lalu coba lagi."); return; }
+    try { localStorage.setItem(MIC_OK, "1"); } catch { /* ignore */ }
     const s = st.current; s.stream = stream;
     const ch = supabase.channel(`voice-${code}`, { config: { broadcast: { self: false } } }); s.ch = ch;
     const send = (p: Sig) => ch.send({ type: "broadcast", event: "sig", payload: p });
@@ -55,7 +62,7 @@ export function MicButton({ code, me, className = "" }: { code: string; me: stri
 
   return (
     <>
-      <button onPointerDown={() => (on ? stop() : setAsk(true))} aria-label={on ? "Matikan mic" : "Nyalakan mic"}
+      <button onPointerDown={() => { if (on) { stop(); return; } void micAllowed().then((ok) => (ok ? start() : setAsk(true))); }} aria-label={on ? "Matikan mic" : "Nyalakan mic"}
         className={`flex size-9 items-center justify-center rounded-full border ${on ? "border-chart-4 bg-chart-4/30 text-chart-4" : "border-border bg-card/80 text-foreground"} ${className}`}>
         {on ? <Mic className="size-4" /> : <MicOff className="size-4" />}
       </button>
