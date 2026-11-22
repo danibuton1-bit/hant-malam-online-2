@@ -37,3 +37,4 @@ use the editor.
 - Character art is SVG strings rendered inline (`CharImg`) with CSS-animated parts (`hm-lid`, `hm-armL/R`, `hm-body`); emotes are CSS classes, not emoji.
 - Admin is the first profile, stored in `admin_profiles` (no client access) and checked via the `is_admin(id, kode_id)` RPC. Why: no Cloud Auth; roles must not live on profiles or in localStorage.
 - The admin drone spectates via the same `game-<code>` broadcast channel and sends a `drone` event that players' scenes render. Why: no extra server state.
+- Maps share one room grid; `applyMap(id)` in game.ts swaps the live `ROOMS/WALLS/DOORS` bindings and scene3d draws per-map atmosphere from `opts.map`; the room's map lives in `rooms.map`. Why: keys, spawns and ghost paths stay valid on every map.

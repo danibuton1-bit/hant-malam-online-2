@@ -22,6 +22,20 @@
       "when": 1795341396666,
       "tag": "0002_admin_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795342173659,
+      "tag": "0003_room_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795342557044,
+      "tag": "0004_remove_test_profile",
+      "breakpoints": true
     }
   ]
 }

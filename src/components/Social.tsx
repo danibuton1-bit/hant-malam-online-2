@@ -4,6 +4,7 @@ import { Check, Globe, Lock, MessageCircle, Send, UserPlus, Users, X } from "luc
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeChar } from "@/lib/art";
 import { roomCode } from "@/lib/game";
+import { audio } from "@/lib/audio";
 import { useApp } from "./AppState";
 import { CharImg } from "./Art";
 import { Button } from "./ui/button";
@@ -37,6 +38,12 @@ export function SocialPanel({ room, className }: { room?: string; className?: st
   const [info, setInfo] = useState("");
   const [unread, setUnread] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const [notif, setNotif] = useState<{ k: number; who: string; kar: string | null; body: string; kind: "dunia" | "pribadi" } | null>(null);
+  const lastWorld = useRef<string | null>(null);
+  const showNotif = useCallback((n: Omit<NonNullable<typeof notif>, "k">) => {
+    const k = Date.now(); setNotif({ ...n, k }); audio.pickup();
+    window.setTimeout(() => setNotif((c) => (c?.k === k ? null : c)), 4000);
+  }, []);
   const onlineIds = new Set(online.map((o) => o.id));
 
   const loadWorld = useCallback(async () => {
@@ -62,6 +69,12 @@ export function SocialPanel({ room, className }: { room?: string; className?: st
       .subscribe();
     return () => { void supabase.removeChannel(ch); };
   }, [loadWorld]);
+  useEffect(() => {
+    const last = world[world.length - 1]; if (!last) return;
+    const prev = lastWorld.current; lastWorld.current = last.id;
+    if (prev && prev !== last.id && last.sender_id !== account?.id && !(open && tab === "dunia")) showNotif({ who: last.sender_nama, kar: last.sender_karakter ?? null, body: last.body, kind: "dunia" });
+  }, [world]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (signals.dm && !(open && tab === "pribadi")) showNotif({ who: "Pesan pribadi", kar: null, body: "Temanmu mengirim pesan baru", kind: "pribadi" }); }, [signals.dm]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void loadFriends(); }, [loadFriends, signals.friend]);
   useEffect(() => { void loadDm(dmWith); }, [loadDm, dmWith, signals.dm]);
   useEffect(() => { if (signals.dm && !(open && tab === "pribadi")) setUnread((u) => u + 1); }, [signals.dm]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -107,6 +120,10 @@ export function SocialPanel({ room, className }: { room?: string; className?: st
   const msgs = tab === "dunia" ? world : dm;
   return (
     <>
+      {notif && <button key={notif.k} onClick={() => { setOpen(true); setTab(notif.kind); setNotif(null); setUnread(0); }} className="fixed left-1/2 top-3 z-[60] flex w-[min(92vw,22rem)] -translate-x-1/2 items-center gap-2 rounded-xl border-2 border-gold/70 bg-card/95 p-2 text-left shadow-lg animate-in slide-in-from-top-4 fade-in duration-300">
+        {notif.kar ? <CharImg id={normalizeChar(notif.kar) ?? "raka"} className="h-10 w-8 shrink-0" /> : <MessageCircle className="size-8 shrink-0 text-primary" />}
+        <div className="min-w-0 flex-1"><div className="flex items-center gap-1 text-xs font-bold"><span className="truncate">{notif.who}</span><span className={`rounded px-1 text-[9px] ${notif.kind === "dunia" ? "bg-chart-4/30" : "bg-primary/30"}`}>{notif.kind === "dunia" ? "DUNIA" : "PRIBADI"}</span></div><div className="truncate text-xs text-muted-foreground">{notif.body}</div></div>
+      </button>}
       <button onClick={() => { setOpen((o) => !o); setUnread(0); }} className={`relative flex size-12 items-center justify-center rounded-full border border-border bg-card/90 text-foreground ${className ?? ""}`} aria-label="Chat dan teman">
         <MessageCircle className="size-6" />
         {(unread > 0 || incoming.length > 0) && <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">{unread + incoming.length}</span>}

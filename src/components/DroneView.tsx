@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, Crosshair, RotateCcw, RotateCw } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Crosshair, Eye, RotateCcw, RotateCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { batterySvg, characterSvg, CHARACTERS, exclaimSvg, ghostSvg, keySvg, kuntilanakSvg, loadImg, normalizeChar, pocongSvg, type CharId } from "@/lib/art";
-import { BOT_GHOST_ID, GHOST_SPAWN, npcsAt, WORLD } from "@/lib/game";
+import { batterySvg, characterSvg, CHARACTERS, exclaimSvg, ghostSvg, keySvg, kuntilanakSvg, hoodieSvg, loadImg, normalizeChar, pocongSvg, type CharId } from "@/lib/art";
+import { applyMap, BOT_GHOST_ID, GHOST_SPAWN, isMapId, npcsAt, WORLD, type MapId } from "@/lib/game";
 import { createScene } from "@/lib/scene3d";
 import { toContent } from "@/lib/orient";
 import { Joystick } from "./Joystick";
@@ -24,13 +24,19 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
   const [follow, setFollow] = useState<string | null>(null);
   const followRef = useRef<string | null>(null); followRef.current = follow;
   const [hud, setHud] = useState({ h: 3, startedAt: 0 });
+  const [map, setMap] = useState<MapId>("rumah");
+  const [nv, setNv] = useState(false);
+  const nvRef = useRef<(on: boolean) => void>(() => {});
+  useEffect(() => { nvRef.current(nv); }, [nv]);
 
   useEffect(() => {
     void (async () => {
-      const [{ data }, { data: gs }] = await Promise.all([
+      const [{ data }, { data: gs }, { data: rm }] = await Promise.all([
         supabase.from("players").select("profile_id,nama,karakter,role").eq("room_code", code),
         supabase.from("game_state").select("started_at").eq("room_code", code).maybeSingle(),
+        supabase.from("rooms").select("map").eq("code", code).maybeSingle(),
       ]);
+      const m = isMapId(rm?.map) ? rm.map : "rumah"; applyMap(m); setMap(m);
       const ps: P[] = (data ?? []).map((p) => ({ id: p.profile_id, nama: p.nama, karakter: normalizeChar(p.karakter) ?? "raka", role: p.role }));
       if (!ps.some((p) => p.role === "ghost")) ps.push({ id: BOT_GHOST_ID, nama: "Hantu AI", karakter: "raka", role: "ghost" });
       setHud((h) => ({ ...h, startedAt: gs?.started_at ? new Date(gs.started_at).getTime() : Date.now() }));
@@ -41,9 +47,10 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
   useEffect(() => {
     if (!players) return;
     const url = (svg: string) => loadImg(svg).src;
-    const imgs: Record<string, string> = { ghost: url(ghostSvg()), kunti: url(kuntilanakSvg()), pocong: url(pocongSvg()), key: url(keySvg()), bat: url(batterySvg()), ex: url(exclaimSvg()) };
+    const imgs: Record<string, string> = { ghost: url(ghostSvg()), kunti: url(kuntilanakSvg()), hoodie: url(hoodieSvg()), pocong: url(pocongSvg()), key: url(keySvg()), bat: url(batterySvg()), ex: url(exclaimSvg()) };
     (Object.keys(CHARACTERS) as CharId[]).forEach((c) => { imgs[c] = url(characterSvg(c)); });
-    const sc = createScene(canvasRef.current!, { me: "raka", amGhost: false, imgs, drone: true });
+    const sc = createScene(canvasRef.current!, { me: "raka", amGhost: false, imgs, drone: true, map });
+    nvRef.current = (on) => sc.setNightVision(on); sc.setNightVision(nv);
     const live: Record<string, L> = {};
     players.forEach((p) => { sc.ensurePlayer(p.id, p.role === "ghost" ? "ghost" : p.karakter, p.role !== "ghost", p.nama); live[p.id] = { x: GHOST_SPAWN.x, y: GHOST_SPAWN.y, tx: GHOST_SPAWN.x, ty: GHOST_SPAWN.y, yaw: 0, moving: false, alive: true }; });
     sc.resize(); const onResize = () => sc.resize(); window.addEventListener("resize", onResize);
@@ -111,7 +118,7 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
       window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [players, code]);
+  }, [players, code, map]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hold = (r: { current: number }, v: number) => ({
     onPointerDown: (e: React.PointerEvent) => { e.stopPropagation(); r.current = v; },
@@ -129,6 +136,8 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
         <div className="rounded-md bg-card/80 px-2 py-1 text-xs font-bold"><span className="mr-1 inline-block size-2 animate-pulse rounded-full bg-destructive" />DRONE LIVE · {code} · {hud.h.toFixed(1)} m</div>
       </div>
       <button onClick={cycle} className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-card/80 px-3 py-2 text-xs font-bold"><Crosshair className="size-4 text-primary" />{fName ? `Ikuti: ${fName}` : "Bebas"}</button>
+      <button onClick={() => setNv((v) => !v)} aria-pressed={nv} className={`absolute right-2 top-12 flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${nv ? "bg-chart-2 text-background" : "bg-card/80"}`}><Eye className="size-4" />NIGHT VISION {nv ? "ON" : "OFF"}</button>
+      {nv && <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,hsl(var(--background)/.75))] mix-blend-multiply" />}
       <div className="absolute bottom-6 left-6" onPointerDown={(e) => e.stopPropagation()}><Joystick vec={joy} /></div>
       <div className="absolute bottom-6 right-6 grid grid-cols-3 gap-2">
         <span />

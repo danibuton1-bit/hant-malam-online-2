@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Send } from "lucide-react";
 import { Battery, Ghost, KeyRound, Megaphone } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { batterySvg, characterSvg, CHARACTERS, exclaimSvg, ghostSvg, keySvg, kuntilanakSvg, loadImg, pocongSvg, type CharId } from "@/lib/art";
+import { batterySvg, characterSvg, CHARACTERS, exclaimSvg, ghostSvg, keySvg, kuntilanakSvg, hoodieSvg, loadImg, pocongSvg, type CharId } from "@/lib/art";
 import { audio } from "@/lib/audio";
-import { BATTERIES, BOT_GHOST_ID, BOT_PATROL, CATCH_DIST, ROOMS, WALLS, WORLD, decideOutcome, EXIT, GAME_SECONDS, GHOST_SPAWN, HUNTER_SPAWNS, KEYS, move, npcsAt, roomAt, TOTAL_KEYS } from "@/lib/game";
+import { BATTERIES, BOT_GHOST_ID, BOT_PATROL, CATCH_DIST, ROOMS, WALLS, WORLD, decideOutcome, EXIT, GAME_SECONDS, GHOST_SPAWN, HUNTER_SPAWNS, KEYS, move, npcsAt, roomAt, TOTAL_KEYS, applyMap, liftAt, LIFTS, MAP_ID, MAPS, type MapId } from "@/lib/game";
 import { CharImg, EmoteIcon, EmoteWheel } from "./Art";
 import { Bubble } from "./Social";
 import { Joystick } from "./Joystick";
@@ -20,9 +20,13 @@ type Live = { yaw: number; x: number; y: number; tx: number; ty: number; status:
 
 const HUNTER_SPEED = 150, GHOST_SPEED = 168;
 
-export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLeave }: {
-  code: string; me: string; players: GamePlayer[]; startedAt: number; isHost: boolean; onBackToLobby: () => void; onLeave: () => void;
+export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLeave, map = "rumah" }: {
+  code: string; me: string; players: GamePlayer[]; startedAt: number; isHost: boolean; onBackToLobby: () => void; onLeave: () => void; map?: MapId;
 }) {
+  applyMap(map);
+  const [onLift, setOnLift] = useState(false);
+  const [riding, setRiding] = useState(false);
+  const liftRef = useRef<() => void>(() => {});
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const joy = useRef({ x: 0, y: 0 });
   const keysDown = useRef<Record<string, boolean>>({});
@@ -61,9 +65,9 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
     let keyMask = 0, batMask = 0, ended = false, lastSend = 0, lastStep = 0, stunUntil = 0, npcCd = 0;
     const meL = live[me]!;
     const url = (svg: string) => loadImg(svg).src;
-    const imgUrls: Record<string, string> = { ghost: url(ghostSvg()), kunti: url(kuntilanakSvg()), pocong: url(pocongSvg()), key: url(keySvg()), bat: url(batterySvg()), ex: url(exclaimSvg()) };
+    const imgUrls: Record<string, string> = { ghost: url(ghostSvg()), kunti: url(kuntilanakSvg()), hoodie: url(hoodieSvg()), pocong: url(pocongSvg()), key: url(keySvg()), bat: url(batterySvg()), ex: url(exclaimSvg()) };
     (Object.keys(CHARACTERS) as CharId[]).forEach((c) => { imgUrls[c] = url(characterSvg(c)); });
-    const sc = createScene(canvasRef.current!, { me: amGhost ? "ghost" : meP.karakter, amGhost, imgs: imgUrls });
+    const sc = createScene(canvasRef.current!, { me: amGhost ? "ghost" : meP.karakter, amGhost, imgs: imgUrls, map });
     all.forEach((p) => { if (p.id !== me) sc.ensurePlayer(p.id, p.role === "ghost" ? "ghost" : p.karakter, p.role !== "ghost", p.nama); });
     sc.resize(); const onResize = () => sc.resize(); window.addEventListener("resize", onResize);
     let pitch = 0;
@@ -93,7 +97,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       if (!fresh) return;
       keyMask |= mask;
       KEYS.forEach((k) => { if (fresh & (1 << k.id)) { audio.pickup(); notify(local ? `Kamu dapat ${k.name}!` : `Tim dapat ${k.name}!`); } });
-      if (keyMask === 31) { audio.creak(); setTimeout(() => notify("Semua kunci terkumpul! Kabur lewat gerbang Kuburan Belakang!"), 1200); }
+      if (keyMask === 31) { audio.creak(); setTimeout(() => notify(`Semua kunci terkumpul! Kabur lewat gerbang di ${ROOMS[5]!.name}!`), 1200); }
     };
     ch.on("broadcast", { event: "pos" }, ({ payload }) => {
       const p = payload as { id: string; a?: number; p?: number; x: number; y: number; m: boolean; st: string; k: number; b: number };
@@ -158,6 +162,12 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
         .map(([, l]) => ({ l, d: Math.hypot(l.x - bot.x, l.y - bot.y) })).filter((o) => o.d < 380 || now < o.l.shoutUntil).sort((a, b) => a.d - b.d)[0];
       let tx: number, ty: number;
       if (prey) { tx = prey.l.x; ty = prey.l.y; } else { const w = BOT_PATROL[botWp]!; tx = w[0]; ty = w[1]; if (Math.hypot(tx - bot.x, ty - bot.y) < 40) botWp = (botWp + 1) % BOT_PATROL.length; }
+      if (MAP_ID === "hotel" && (ty < 500) !== (bot.y < 500)) {
+        // other floor: walk to this floor's lift and ride it
+        const l = LIFTS[bot.y < 500 ? 0 : 1]!, o = LIFTS[bot.y < 500 ? 1 : 0]!;
+        if (Math.hypot(l.x - bot.x, l.y - bot.y) < 30) { bot.x = bot.tx = o.x; bot.y = bot.ty = o.y; if (!prey) botWp = (botWp + 1) % BOT_PATROL.length; }
+        tx = l.x; ty = l.y;
+      }
       let ang = Math.atan2(ty - bot.y, tx - bot.x) + botDir;
       const sp = GHOST_SPEED * (prey ? 0.6 : 0.5) * dt;
       const p = move(bot.x, bot.y, Math.cos(ang) * sp, Math.sin(ang) * sp);
@@ -190,6 +200,13 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
     const ku = (e: KeyboardEvent) => { keysDown.current[e.key.toLowerCase()] = false; };
     window.addEventListener("keydown", kd); window.addEventListener("keyup", ku);
 
+    let liftOn = false, liftBusy = false;
+    liftRef.current = () => {
+      const l = liftAt(meL.x, meL.y); if (!l || liftBusy) return;
+      const o = LIFTS.find((x) => x !== l)!;
+      liftBusy = true; setRiding(true); audio.creak();
+      window.setTimeout(() => { meL.x = meL.tx = o.x; meL.y = meL.ty = o.y + (o.floor === 2 ? 40 : -40); liftBusy = false; setRiding(false); notify(`Lift tiba di Lantai ${o.floor}`); }, 1600);
+    };
     let raf = 0, last = performance.now(), hudT = 0;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
@@ -219,6 +236,8 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
         if (now - lastStep > (amGhost ? 520 : 330)) { lastStep = now; if (!amGhost) audio.step(); }
       }
       meL.tx = meL.x; meL.ty = meL.y;
+      const lf = liftAt(meL.x, meL.y);
+      if (!!lf !== liftOn) { liftOn = !!lf; setOnLift(liftOn); }
       for (const [id, l] of Object.entries(live)) if (id !== me) { l.x += (l.tx - l.x) * Math.min(1, dt * 12); l.y += (l.ty - l.y) * Math.min(1, dt * 12); }
 
       if (bot && isHost && !countdown && !ended) runBot(now, dt);
@@ -230,7 +249,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
         BATTERIES.forEach((b) => { if (!(batMask & (1 << b.id)) && Math.hypot(b.x - meL.x, b.y - meL.y) < 34) { batMask |= 1 << b.id; meL.battery = Math.min(100, meL.battery + 60); audio.pickup(); notify("Baterai senter terisi!"); } });
         if (now > npcCd) for (const n of npcs) if (Math.hypot(n.x - meL.x, n.y - meL.y) < 40) {
           npcCd = now + 3000; stunUntil = now + 900; meL.battery = Math.max(0, meL.battery - 25); audio.scream();
-          notify(n.kind === "pocong" ? "Pocong melompat ke arahmu! Senter melemah." : "Kuntilanak menjerit! Senter melemah.");
+          notify(n.kind === "hoodie" ? "Hantu Hoodie tertawa dan menjeratmu dengan tentakel! Senter melemah." : n.kind === "pocong" ? "Pocong melompat ke arahmu! Senter melemah." : "Kuntilanak menjerit! Senter melemah.");
           break;
         }
         if (keyMask === 31 && Math.hypot(EXIT.x - meL.x, EXIT.y - meL.y) < EXIT.r) setStatus(me, "escaped");
@@ -317,7 +336,9 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       <div className="absolute left-1/2 top-12 -translate-x-1/2 text-xs text-muted-foreground">{amGhost ? "HANTU ASAP" : "PEMBURU"} - {hud.room}</div>
       <div className="pointer-events-none absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/50" />
       {hud.near > 0.2 && <div className="pointer-events-none absolute inset-0 animate-pulse" style={{ background: `repeating-linear-gradient(0deg, rgba(255,255,255,${hud.near * 0.05}) 0 1px, transparent 1px 3px)`, mixBlendMode: "screen" }} />}
-      {hud.cd > 0 && <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-void/50 text-center"><div className="font-horror text-8xl text-primary">{hud.cd}</div><p className="mt-3 px-6 text-foreground">{amGhost ? "KAMU HANTU ASAP. Kagetkan para pemburu!" : "KAMU PEMBURU. Cari 5 kunci dan kabur!"}</p></div>}
+      {onLift && !riding && hud.cd === 0 && <button onClick={() => liftRef.current()} className="absolute bottom-40 left-1/2 z-20 -translate-x-1/2 rounded-lg border-2 border-gold bg-card/90 px-5 py-3 font-horror text-xl text-gold">{hud.room.includes("Lt.1") ? "▲ NAIK KE LANTAI 2" : "▼ TURUN KE LANTAI 1"}</button>}
+      {riding && <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-void/90"><div className="text-center"><div className="font-horror text-4xl text-gold animate-pulse">LIFT BERGERAK...</div><div className="mt-2 text-sm text-muted-foreground">Ding!</div></div></div>}
+      {hud.cd > 0 && <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-void/60 text-center"><div className="w-full bg-primary/80 py-2 font-horror text-2xl tracking-widest text-primary-foreground">PERTANDINGAN DIMULAI · {MAPS.find((m) => m.id === map)?.nama.toUpperCase()}</div><div key={hud.cd} className="mt-4 font-horror text-[9rem] leading-none text-gold drop-shadow-[0_0_30px_hsl(350_80%_40%)] animate-in zoom-in-50 duration-300">{hud.cd}</div><p className="mt-3 px-6 text-foreground">{amGhost ? "KAMU HANTU ASAP. Kagetkan para pemburu!" : "KAMU PEMBURU. Cari 5 kunci dan kabur!"}</p></div>}
       {toast && <div className="absolute left-1/2 top-20 -translate-x-1/2 rounded-lg border border-gold bg-card/90 px-4 py-2 text-center text-sm font-bold text-gold">{toast}</div>}
       {spectating && !outcome && <div className="absolute inset-x-0 top-28 text-center font-horror text-2xl text-foreground">KAMU JADI PENONTON</div>}
       <div className="pointer-events-none absolute left-1/2 top-32 flex -translate-x-1/2 flex-col items-center gap-1">

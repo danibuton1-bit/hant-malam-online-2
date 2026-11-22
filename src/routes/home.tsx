@@ -80,7 +80,7 @@ function Lobby() {
     setErr("Gagal mencari pertandingan, coba lagi."); setBusy(false);
   }
 
-  const buddies = online.filter((o) => friendIds.has(o.id)).slice(0, 2);
+  const buddies: typeof online = []; void friendIds; void normalizeChar; // lobby stays solo until friends accept an invite
   const pair = emote && PAIR_EMOTES.includes(emote) && buddies.length > 0;
   return (
     <main className="relative h-full min-h-full overflow-hidden" style={{ background: "radial-gradient(ellipse at 50% 70%, hsl(350 70% 18% / .7), transparent 60%), var(--background)" }}>
@@ -105,6 +105,7 @@ function Lobby() {
           <div className="mt-1 h-3 w-40 rounded-full bg-primary/30 blur-md" />
           <div className="font-horror text-2xl text-primary">{ch.nama}</div>
         </div>
+        {[0, 1, 2].map((i) => <div key={i} className="mb-16 hidden size-16 items-center justify-center rounded-full border-2 border-dashed border-muted-foreground/60 text-3xl text-muted-foreground/70 sm:flex" title="Undang teman">+</div>)}
         {buddies[1] && <div className="flex flex-col items-center opacity-80">
           <CharImg id={normalizeChar(buddies[1].karakter) ?? "raka"} className="h-[34vmin] max-h-48" />
           <div className="text-xs text-muted-foreground">{buddies[1].nama}</div>
@@ -119,8 +120,8 @@ function Lobby() {
       {/* mode + start */}
       <div className="absolute bottom-3 right-3 z-10 flex w-56 flex-col gap-2">
         <div className="rounded-lg border border-border bg-card/80 p-2 text-xs">
-          <div className="font-bold text-primary">MODE: RUMAH TUA</div>
-          <div className="text-muted-foreground">Hantu vs Pemburu · 5 menit · Hantu AI jika tak ada yang jadi hantu</div>
+          <div className="font-bold text-primary">MODE: 4 MAP</div>
+          <div className="text-muted-foreground">Rumah Tua · Rumah Sakit · Kuburan · Hotel 2 Lantai — kapten memilih di lobby squad</div>
         </div>
         {err && <p className="text-xs text-destructive">{err}</p>}
         <Button size="lg" className="h-16 text-2xl font-horror glow-blood" onClick={start} disabled={busy}>

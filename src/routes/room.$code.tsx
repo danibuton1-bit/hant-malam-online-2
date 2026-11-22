@@ -6,7 +6,7 @@ import { ArrowLeft, Crown, Ghost } from "lucide-react";
 import { CharImg, EmoteIcon, EmoteWheel } from "@/components/Art";
 import { SocialPanel } from "@/components/Social";
 import { EMOTE_MS, PAIR_EMOTES } from "@/lib/emotes";
-import { assignRoles } from "@/lib/game";
+import { assignRoles, isMapId, MAPS, type MapId } from "@/lib/game";
 import { normalizeChar } from "@/lib/art";
 
 const SLOT = 108;
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/room/$code")({
   component: RoomPage,
 });
 
-type RoomRow = { code: string; host_id: string; status: string };
+type RoomRow = { code: string; host_id: string; status: string; map: string };
 
 function RoomPage() {
   const { code } = Route.useParams();
@@ -47,7 +47,7 @@ function RoomPage() {
 
   const refresh = useCallback(async () => {
     const [{ data: r }, { data: ps }, { data: gs }] = await Promise.all([
-      supabase.from("rooms").select("code,host_id,status").eq("code", code).maybeSingle(),
+      supabase.from("rooms").select("code,host_id,status,map").eq("code", code).maybeSingle(),
       supabase.from("players").select("*").eq("room_code", code).order("joined_at"),
       supabase.from("game_state").select("started_at").eq("room_code", code).maybeSingle(),
     ]);
@@ -90,8 +90,13 @@ function RoomPage() {
     audio.init();
     const { roles } = assignRoles(players.map((p) => ({ id: p.id, pref: p.pref ?? "hunter" })));
     await Promise.all(players.map((p) => supabase.from("players").update({ role: roles[p.id]!, status: "alive" }).eq("room_code", code).eq("profile_id", p.id)));
-    await supabase.from("game_state").upsert({ room_code: code, keys_found: 0, started_at: new Date(Date.now() + 3000).toISOString(), winner: null, updated_at: new Date().toISOString() });
+    await supabase.from("game_state").upsert({ room_code: code, keys_found: 0, started_at: new Date(Date.now() + 10000).toISOString(), winner: null, updated_at: new Date().toISOString() });
     await supabase.from("rooms").update({ status: "playing" }).eq("code", code);
+  }
+
+  async function setMap(m: MapId) {
+    setRoomRow((r) => (r ? { ...r, map: m } : r));
+    await supabase.from("rooms").update({ map: m }).eq("code", code);
   }
 
   async function setPref(pref: "ghost" | "hunter") {
@@ -169,7 +174,7 @@ function RoomPage() {
   const isHost = players[0]?.id === account.id;
   const inRoom = players.some((p) => p.id === account.id);
   if (room.status !== "lobby" && inRoom && players.every((p) => p.role)) {
-    return <Game code={code} me={account.id} players={players} startedAt={startedAt} isHost={isHost} onBackToLobby={backToLobby} onLeave={leave} />;
+    return <Game code={code} me={account.id} players={players} startedAt={startedAt} isHost={isHost} onBackToLobby={backToLobby} onLeave={leave} map={isMapId(room.map) ? room.map : "rumah"} />;
   }
 
   const myPref = players.find((p) => p.id === account.id)?.pref ?? "hunter";
@@ -188,10 +193,16 @@ function RoomPage() {
               <CharImg id={p.karakter} emote={em?.e ?? null} walking={em?.walk ?? false} className="relative z-10 h-28 transition-transform duration-[850ms] ease-linear" style={{ transform: `translateX(${em?.dx ?? 0}px)${(em?.dx ?? 0) > 0 ? " scaleX(-1)" : ""}` }} />
               <div className="flex w-full items-center justify-center gap-1 truncate text-xs font-bold">{i === 0 && <Crown className="size-3 text-gold" />}{p.nama}</div>
               <div className={`text-[10px] font-bold ${p.pref === "ghost" ? "text-primary" : "text-chart-4"}`}>{p.pref === "ghost" ? "INGIN JADI HANTU" : "PEMBURU"}</div>
-              <div className={`text-[10px] font-bold ${i === 0 || readyIds.has(p.id) ? "text-gold" : "text-muted-foreground"}`}>{i === 0 ? "HOST" : readyIds.has(p.id) ? "SIAP" : "BELUM SIAP"}</div>
-            </> : <div className="mb-12 text-2xl text-muted-foreground">?</div>}
+              <div className={`text-[10px] font-bold ${i === 0 || readyIds.has(p.id) ? "text-gold" : "text-muted-foreground"}`}>{i === 0 ? "KAPTEN" : readyIds.has(p.id) ? "SIAP" : "BELUM SIAP"}</div>
+            </> : <div className="mb-12 flex size-12 items-center justify-center rounded-full border-2 border-dashed border-muted-foreground text-2xl text-muted-foreground">+</div>}
           </div>
         ); })}
+      </div>
+      <div className="w-full max-w-md rounded-lg border border-gold/50 bg-card/80 p-2">
+        <div className="mb-1 text-center text-xs font-bold text-gold">MODE / MAP {isHost ? "(kapten memilih)" : ""}</div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {MAPS.map((m) => <button key={m.id} disabled={!isHost} onClick={() => void setMap(m.id)} className={`rounded-md border p-1.5 text-left text-[11px] ${room.map === m.id ? "border-primary bg-primary/25" : "border-border bg-background/40"} ${isHost ? "" : "cursor-default"}`}><div className="font-bold">{m.nama}</div><div className="text-muted-foreground">{m.desc}</div></button>)}
+        </div>
       </div>
       {inRoom && <div className="flex items-center gap-2 rounded-lg border border-border bg-card/80 p-1.5 text-xs">
         <span className="text-muted-foreground">Pilih peran:</span>

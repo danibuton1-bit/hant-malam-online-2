@@ -235,18 +235,21 @@ export type Database = {
           code: string
           created_at: string
           host_id: string
+          map: string
           status: string
         }
         Insert: {
           code: string
           created_at?: string
           host_id: string
+          map?: string
           status?: string
         }
         Update: {
           code?: string
           created_at?: string
           host_id?: string
+          map?: string
           status?: string
         }
         Relationships: []

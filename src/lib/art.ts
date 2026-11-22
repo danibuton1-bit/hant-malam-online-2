@@ -193,6 +193,23 @@ export function kuntilanakSvg(): string {
 </svg>`;
 }
 
+/** "Hantu Hoodie": chibi in a black hoodie, spiral red eyes, fanged grin, shadow tentacles instead of legs. */
+export function hoodieSvg(): string {
+  const tent = [-38, -20, -4, 12, 28, 42].map((x, i) => `<path d="M${100 + x} 150 q${i % 2 ? 14 : -14} 30 ${i % 2 ? -6 : 6} 58 q-4 10 4 14" stroke="url(#tg)" stroke-width="${12 - Math.abs(i - 2.5)}" fill="none" stroke-linecap="round"/>`).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240"><defs><radialGradient id="au"><stop offset="0" stop-color="#ff1030" stop-opacity=".5"/><stop offset="1" stop-color="#ff1030" stop-opacity="0"/></radialGradient><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#140608"/><stop offset="1" stop-color="#8a0d18"/></linearGradient><radialGradient id="ey"><stop offset="0" stop-color="#fff2a0"/><stop offset=".35" stop-color="#ff2020"/><stop offset="1" stop-color="#5a0008"/></radialGradient></defs>
+<ellipse cx="100" cy="150" rx="95" ry="90" fill="url(#au)"/>${tent}
+<path d="M52 108 q48 -18 96 0 l10 52 q-58 16 -116 0z" fill="#121216"/><path d="M92 112 l8 30 l8 -30" stroke="#2a2a30" stroke-width="3" fill="none"/>
+<path d="M62 132 q4 -6 10 0 q2 8 -5 10 q-7 -2 -5 -10z" fill="#f2f2f2"/><circle cx="65" cy="134" r="1.3" fill="#111"/><circle cx="69" cy="134" r="1.3" fill="#111"/>
+<path d="M40 70 q0 -58 60 -60 q60 2 60 60 q6 30 -6 52 l-10 -20 l-6 26 l-12 -18 l-26 0 l-12 18 l-6 -26 l-10 20 q-12 -22 -6 -52z" fill="#0b0b0e"/>
+<ellipse cx="100" cy="74" rx="44" ry="40" fill="#e8e1dc"/>
+<path d="M58 50 q42 -34 84 0 q-10 -6 -20 4 q-10 -12 -22 0 q-12 -12 -22 0 q-10 -10 -20 -4z" fill="#0b0b0e"/>
+<g stroke="#b01020" stroke-width=".8" opacity=".7"><path d="M62 70 l10 4 M62 82 l9 -3 M138 70 l-10 4 M138 82 l-9 -3"/></g>
+<circle cx="82" cy="74" r="13" fill="url(#ey)"/><circle cx="118" cy="74" r="13" fill="url(#ey)"/>
+<path d="M82 74 m0 -1 a2 2 0 1 1 -2 3 a5 5 0 1 1 7 -6 a8 8 0 1 1 -12 9" stroke="#3a0006" stroke-width="1.6" fill="none"/><path d="M118 74 m0 -1 a2 2 0 1 1 -2 3 a5 5 0 1 1 7 -6 a8 8 0 1 1 -12 9" stroke="#3a0006" stroke-width="1.6" fill="none"/>
+<path d="M72 94 q28 22 56 0 q-28 10 -56 0z" fill="#3a0008"/><path d="M76 96 l4 7 l3 -6 l4 8 l3 -7 l4 8 l3 -8 l4 8 l3 -8 l4 7 l3 -6 l4 6" fill="#fff" stroke="#fff" stroke-width=".5"/>
+</svg>`;
+}
+
 export function pocongSvg(): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 160">
 <path d="M50 4 L42 18 L58 18Z" fill="#f2f1ec"/><path d="M44 16 q6 5 12 0" stroke="#bdbab0" stroke-width="3" fill="none"/>

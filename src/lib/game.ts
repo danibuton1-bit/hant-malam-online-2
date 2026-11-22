@@ -9,7 +9,7 @@ export type Rect = { x: number; y: number; w: number; h: number };
 export type Room = Rect & { name: string; floor: string };
 
 const RW = 500, RH = 500;
-export const ROOMS: Room[] = [
+const BASE_ROOMS: Room[] = [
   { name: "Ruang Tamu", x: 0, y: 0, w: RW, h: RH, floor: "#2a1a14" },
   { name: "Lorong", x: RW, y: 0, w: RW, h: RH, floor: "#1c1620" },
   { name: "Dapur", x: RW * 2, y: 0, w: RW, h: RH, floor: "#22201a" },
@@ -36,24 +36,55 @@ function vWall(x: number, y: number, len: number, doorAt?: number): Rect[] {
 }
 
 /** Swinging doors in every doorway: hinge at one side, v=true when the door sits in a vertical wall. */
-export const DOORS: { x: number; y: number; v: boolean }[] = [
+const BASE_DOORS: { x: number; y: number; v: boolean }[] = [
   { x: RW, y: 250, v: true }, { x: RW * 2, y: 320, v: true }, { x: RW, y: 700, v: true }, { x: RW * 2, y: 780, v: true },
   { x: 250, y: RH, v: false }, { x: 750, y: RH, v: false }, { x: 1250, y: RH, v: false },
 ];
 export const DOOR_W = DOOR;
 
-export const WALLS: Rect[] = [
+const OUTER_INNER: Rect[] = [
   ...hWall(0, T / 2, WORLD.w), ...hWall(0, WORLD.h - T / 2, WORLD.w),
   ...vWall(T / 2, 0, WORLD.h), ...vWall(WORLD.w - T / 2, 0, WORLD.h),
   ...vWall(RW, 0, RH, 250), ...vWall(RW * 2, 0, RH, 320),
   ...vWall(RW, RH, RH, 700), ...vWall(RW * 2, RH, RH, 780),
-  ...hWall(0, RH, RW, 250), ...hWall(RW, RH, RW, 750), ...hWall(RW * 2, RH, RW, 1250),
+];
+const MID_DOORS: Rect[] = [...hWall(0, RH, RW, 250), ...hWall(RW, RH, RW, 750), ...hWall(RW * 2, RH, RW, 1250)];
+const MID_SOLID: Rect[] = hWall(0, RH, WORLD.w);
+const FURNITURE: Rect[] = [
   // furniture
   { x: 120, y: 120, w: 160, h: 60 }, { x: 1180, y: 60, w: 220, h: 50 }, { x: 1320, y: 200, w: 60, h: 160 },
   { x: 80, y: 640, w: 120, h: 70 }, { x: 600, y: 600, w: 70, h: 70 }, { x: 820, y: 820, w: 90, h: 70 },
   { x: 1150, y: 640, w: 40, h: 70 }, { x: 1300, y: 600, w: 40, h: 70 }, { x: 1150, y: 840, w: 40, h: 70 },
   { x: 700, y: 180, w: 100, h: 30 },
 ];
+
+/** Selectable maps ("MODE"). All share the same grid so keys, spawns and ghost paths stay valid. */
+export type MapId = "rumah" | "rumahsakit" | "kuburan" | "hotel";
+export const MAPS: { id: MapId; nama: string; desc: string; names: string[] }[] = [
+  { id: "rumah", nama: "Rumah Tua", desc: "Rumah klasik berhantu, gelap dan berderit.", names: BASE_ROOMS.map((r) => r.name) },
+  { id: "rumahsakit", nama: "Rumah Sakit", desc: "Lampu neon berkedip hidup-mati di lorong rumah sakit.", names: ["Lobi IGD", "Lorong Bangsal", "Ruang Operasi", "Kamar Mayat", "Gudang Obat", "Ruang Isolasi"] },
+  { id: "kuburan", nama: "Kuburan", desc: "Malam pekat, kabut dan asap di antara nisan.", names: ["Gerbang Makam", "Jalan Setapak", "Makam Tua", "Pohon Beringin", "Rumah Penjaga", "Makam Keramat"] },
+  { id: "hotel", nama: "Hotel 2 Lantai", desc: "Naik turun antar lantai dengan lift.", names: ["Lobi Hotel (Lt.1)", "Lorong Lt.1", "Restoran (Lt.1)", "Kamar 201 (Lt.2)", "Lorong Lt.2", "Suite 203 (Lt.2)"] },
+];
+export const isMapId = (v: unknown): v is MapId => MAPS.some((m) => m.id === v);
+/** Hotel lifts: stand on one pad and ride to the other floor. */
+export const LIFTS = [{ x: 750, y: 410, floor: 1 }, { x: 750, y: 590, floor: 2 }];
+export const LIFT_R = 45;
+
+export let MAP_ID: MapId = "rumah";
+export let ROOMS: Room[] = BASE_ROOMS;
+export let DOORS = BASE_DOORS;
+export let WALLS: Rect[] = [...OUTER_INNER, ...MID_DOORS, ...FURNITURE];
+export function applyMap(id: MapId) {
+  MAP_ID = id;
+  const m = MAPS.find((x) => x.id === id)!;
+  ROOMS = BASE_ROOMS.map((r, i) => ({ ...r, name: m.names[i]! }));
+  DOORS = id === "hotel" ? BASE_DOORS.filter((d) => d.v) : BASE_DOORS;
+  WALLS = [...OUTER_INNER, ...(id === "hotel" ? MID_SOLID : MID_DOORS), ...FURNITURE];
+}
+export function liftAt(x: number, y: number) {
+  return MAP_ID === "hotel" ? LIFTS.find((l) => Math.hypot(l.x - x, l.y - y) < LIFT_R) ?? null : null;
+}
 
 export const KEYS = [
   { id: 0, name: "Kunci Ruang Tamu", x: 380, y: 400 },
@@ -95,12 +126,13 @@ export function roomAt(x: number, y: number) {
 }
 
 /** NPC traps follow fixed loops so all clients agree without syncing. */
-export type Npc = { kind: "kuntilanak" | "pocong"; x: number; y: number };
+export type Npc = { kind: "kuntilanak" | "pocong" | "hoodie"; x: number; y: number };
 const NPC_PATHS: { kind: Npc["kind"]; pts: [number, number][]; speed: number }[] = [
   { kind: "kuntilanak", pts: [[700, 100], [900, 380], [600, 380]], speed: 45 },
   { kind: "kuntilanak", pts: [[1060, 560], [1260, 560], [1420, 940], [1060, 940]], speed: 40 },
   { kind: "pocong", pts: [[120, 560], [420, 560], [420, 900], [250, 900]], speed: 55 },
   { kind: "pocong", pts: [[1100, 120], [1100, 420], [1250, 420]], speed: 50 },
+  { kind: "hoodie", pts: [[620, 620], [900, 620], [900, 900], [620, 900]], speed: 48 },
 ];
 export function npcsAt(seconds: number): Npc[] {
   return NPC_PATHS.map((p) => {
