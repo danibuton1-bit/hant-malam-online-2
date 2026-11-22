@@ -28,3 +28,10 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+
+- Players sign in with an ID card (`profiles.kode_id` + name) through SECURITY DEFINER RPCs, not Cloud Auth; the session is the profile kept in localStorage. Why: the game is intentionally "no email, no password".
+- Private chat and friendships are only reachable through SECURITY DEFINER RPCs that check `id + kode_id`; world chat is a public table read limited to the last 24h and pruned on each send. Why: there is no Cloud Auth session to scope RLS by.
+- When no player picks the ghost, the room host's client simulates the AI ghost (`BOT_GHOST_ID`) and broadcasts its position like a player. Why: keeps the game serverless and in sync with existing realtime broadcast.
+- Character art is SVG strings rendered inline (`CharImg`) with CSS-animated parts (`hm-lid`, `hm-armL/R`, `hm-body`); emotes are CSS classes, not emoji.
