@@ -20,3 +20,10 @@
 - [x] Drone trailer: fly to 40m, roof fade, crane/orbit shots, 21:9, clean screen
 - [x] Bot teammates fill empty squad slots
 - [ ] Hantu Hoodie 3D terbang (ditunda oleh user)
+- [x] Drone director bar (trailer buttons apart from up/down), KUNCI & PUTAR lock-on orbit, drone sees emotes
+- [x] Smoother 3D hunters (rounded shapes, vest, shoes, hair), realistic hug/kiss poses
+- [ ] 3D lobby stage with the same 3D characters
+- [ ] No-scroll game-style sign-up/menus, FHD graphics option, full screen button
+- [ ] Hotel: real 2-floor building, big lift with ↑↓ wall buttons, click-to-open doors, no wall clipping
+- [ ] Auto-remove offline players from rooms (stale "Qila" bug)
+- [ ] Hantu Hoodie 3D flying

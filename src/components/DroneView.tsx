@@ -14,12 +14,16 @@ export const DRONE = { SPEED: 260, VERT: 2.2, MIN_H: 0.6, MAX_H: 40, ACCEL: 3.2,
 /** Ease-in-out for choreographed trailer shots. */
 export const ease = (x: number) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
 /** Trailer presets: crane rises 1.2m -> 30m tilting down; orbit circles the target 360 degrees. */
-export const SHOTS = { CRANE_S: 14, CRANE_LO: 1.2, CRANE_HI: 30, ORBIT_S: 24, ORBIT_R: 320, ORBIT_H: 14 };
-export type Shot = "crane" | "drop" | "orbit" | null;
+export const SHOTS = { CRANE_S: 14, CRANE_LO: 1.2, CRANE_HI: 30, ORBIT_S: 24, ORBIT_R: 320, ORBIT_H: 14, LOCK_S: 16, LOCK_R: 120, LOCK_H: 2.4 };
+/** Camera yaw/pitch that aims exactly at a world point (chest height ~1m), so the subject stays dead-center. */
+export function aimAt(cx: number, cy: number, ch: number, tx: number, ty: number) {
+  return { yaw: Math.atan2(cx - tx, cy - ty), pitch: -Math.atan2(ch - 1, Math.max(0.2, Math.hypot(cx - tx, cy - ty) / 50)) };
+}
+export type Shot = "crane" | "drop" | "orbit" | "lock" | null;
 export const damp = (cur: number, target: number, k: number, dt: number) => target + (cur - target) * Math.exp(-k * dt);
 
 type P = { id: string; nama: string; karakter: string; role: string | null };
-type L = { x: number; y: number; tx: number; ty: number; yaw: number; moving: boolean; alive: boolean };
+type L = { x: number; y: number; tx: number; ty: number; yaw: number; moving: boolean; alive: boolean; emote: string | null; emoteUntil: number };
 
 export function DroneView({ code, onExit }: { code: string; onExit: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -64,7 +68,7 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
     const sc = createScene(canvasRef.current!, { me: "raka", amGhost: false, imgs, drone: true, map });
     nvRef.current = (on) => sc.setNightVision(on); sc.setNightVision(nv);
     const live: Record<string, L> = {};
-    players.forEach((p) => { sc.ensurePlayer(p.id, p.role === "ghost" ? "ghost" : p.karakter, p.role !== "ghost", p.nama); live[p.id] = { x: GHOST_SPAWN.x, y: GHOST_SPAWN.y, tx: GHOST_SPAWN.x, ty: GHOST_SPAWN.y, yaw: 0, moving: false, alive: true }; });
+    players.forEach((p) => { sc.ensurePlayer(p.id, p.role === "ghost" ? "ghost" : p.karakter, p.role !== "ghost", p.nama); live[p.id] = { x: GHOST_SPAWN.x, y: GHOST_SPAWN.y, tx: GHOST_SPAWN.x, ty: GHOST_SPAWN.y, yaw: 0, moving: false, alive: true, emote: null, emoteUntil: 0 }; });
     sc.resize(); const onResize = () => sc.resize(); window.addEventListener("resize", onResize);
     let keyMask = 0, batMask = 0;
     const ch = supabase.channel(`game-${code}`, { config: { broadcast: { self: false } } });
@@ -74,6 +78,11 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
       l.tx = p.x; l.ty = p.y; l.moving = p.m; if (p.a !== undefined) l.yaw = p.a; l.alive = p.st === "alive"; keyMask |= p.k; batMask |= p.b;
     });
     ch.on("broadcast", { event: "caught" }, ({ payload }) => { const l = live[(payload as { id: string }).id]; if (l) l.alive = false; });
+    ch.on("broadcast", { event: "emote" }, ({ payload }) => {
+      const p = payload as { id: string; e: string; t?: string }; const until = performance.now() + 3500;
+      const a = live[p.id]; if (a) { a.emote = p.e; a.emoteUntil = until; }
+      const b = p.t ? live[p.t] : undefined; if (b && (p.e === "hug" || p.e === "kiss")) { b.emote = p.e; b.emoteUntil = until; }
+    });
     ch.subscribe();
 
     // drone state: position, velocity, height, yaw/pitch — rendered values chase targets smoothly
@@ -99,7 +108,8 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
       const iv = vert.current + (k["e"] || k[" "] ? 1 : 0) - (k["q"] || k["shift"] ? 1 : 0);
       const it = turn.current + (k["arrowleft"] ? 1 : 0) - (k["arrowright"] ? 1 : 0);
       for (const l of Object.values(live)) { l.x = damp(l.x, l.tx, 10, dt); l.y = damp(l.y, l.ty, 10, dt); }
-      const tgt = followRef.current ? live[followRef.current] : null;
+      let tgt = followRef.current ? live[followRef.current] : null;
+      if (!tgt && shotRef.current.kind === "lock") tgt = players.filter((p) => p.role !== "ghost").map((p) => live[p.id]!).find((l) => l.alive) ?? null;
       const sh = shotRef.current;
       if (sh.kind && Math.abs(ix) + Math.abs(iy) + Math.abs(iv) + Math.abs(it) > 0.1) { sh.kind = null; setShot(null); }
       if (sh.kind === "crane" || sh.kind === "drop") {
@@ -115,6 +125,11 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
         const a = sh.yaw + ((now - sh.t0) / 1000 / SHOTS.ORBIT_S) * Math.PI * 2;
         d.x = damp(d.x, cx + Math.sin(a) * SHOTS.ORBIT_R, 2.5, dt); d.y = damp(d.y, cy + Math.cos(a) * SHOTS.ORBIT_R, 2.5, dt);
         d.h = damp(d.h, SHOTS.ORBIT_H, 1.5, dt); d.yaw = a; d.pitch = -Math.atan2(d.h - 1, SHOTS.ORBIT_R / 50); d.vx = d.vy = d.vh = d.vyaw = 0;
+      } else if (sh.kind === "lock" && tgt) {
+        // film-style lock-on: slow close orbit around the subject at head height
+        const a = sh.yaw + ((now - sh.t0) / 1000 / SHOTS.LOCK_S) * Math.PI * 2;
+        d.x = damp(d.x, tgt.x + Math.sin(a) * SHOTS.LOCK_R, 3, dt); d.y = damp(d.y, tgt.y + Math.cos(a) * SHOTS.LOCK_R, 3, dt);
+        d.h = damp(d.h, SHOTS.LOCK_H + Math.sin(a * 0.5) * 0.6, 1.5, dt); d.yaw = a; d.vx = d.vy = d.vh = d.vyaw = 0;
       } else if (tgt && Math.abs(ix) + Math.abs(iy) < 0.05) {
         // orbit-follow: stay behind-and-above the player, looking at them
         const fx = tgt.x + Math.sin(d.yaw) * DRONE.FOLLOW_DIST, fy = tgt.y + Math.cos(d.yaw) * DRONE.FOLLOW_DIST;
@@ -131,11 +146,16 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
       if (!sh.kind) d.x = Math.max(20, Math.min(WORLD.w - 20, d.x + d.vx * dt)); d.y = Math.max(20, Math.min(WORLD.h - 20, d.y + d.vy * dt));
       d.h = Math.max(DRONE.MIN_H, Math.min(DRONE.MAX_H, d.h + d.vh * dt)); d.yaw += d.vyaw * dt;
       cam.x = damp(cam.x, d.x, DRONE.CAM_DAMP, dt); cam.y = damp(cam.y, d.y, DRONE.CAM_DAMP, dt); cam.h = damp(cam.h, d.h, DRONE.CAM_DAMP, dt);
-      cam.yaw = damp(cam.yaw, d.yaw, DRONE.ROT_DAMP, dt); cam.pitch = damp(cam.pitch, d.pitch, DRONE.ROT_DAMP, dt);
+      if ((sh.kind === "orbit" || sh.kind === "lock") && (tgt || sh.kind === "orbit")) {
+        // aim from the actual (smoothed) camera position so the subject never drifts off-center
+        const g = aimAt(cam.x, cam.y, cam.h, tgt ? tgt.x : sh.x, tgt ? tgt.y : sh.y);
+        let dy = g.yaw - cam.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        cam.yaw += dy * (1 - Math.exp(-12 * dt)); cam.pitch = damp(cam.pitch, g.pitch, 12, dt); d.yaw = cam.yaw; d.pitch = cam.pitch;
+      } else { cam.yaw = damp(cam.yaw, d.yaw, DRONE.ROT_DAMP, dt); cam.pitch = damp(cam.pitch, d.pitch, DRONE.ROT_DAMP, dt); }
       const t = (now - t0) / 1000;
       const el = Math.max(0, (Date.now() - hud.startedAt) / 1000);
       sc.frame({ dt, t, cam, camH: cam.h, yaw: cam.yaw, pitch: cam.pitch, moving: false, battery: 100, near: 0, keyMask, batMask, npcs: npcsAt(el), firstPerson: false,
-        others: players.map((p) => { const l = live[p.id]!; return { id: p.id, x: l.x, y: l.y, yaw: l.yaw, ghost: p.role === "ghost", shouting: false, visible: l.alive, moving: l.moving, pitch: 0, emote: null }; }) });
+        others: players.map((p) => { const l = live[p.id]!; return { id: p.id, x: l.x, y: l.y, yaw: l.yaw, ghost: p.role === "ghost", shouting: false, visible: l.alive, moving: l.moving, pitch: 0, emote: now < l.emoteUntil ? l.emote : null }; }) });
       if (now - lastSend > 100) { lastSend = now; void ch.send({ type: "broadcast", event: "drone", payload: { x: Math.round(cam.x), y: Math.round(cam.y), h: Math.round(cam.h * 100) / 100, yaw: Math.round(cam.yaw * 100) / 100 } }); }
       if (now - hudT > 250) { hudT = now; setHud((s) => ({ ...s, h: cam.h })); }
     };
@@ -169,14 +189,16 @@ export function DroneView({ code, onExit }: { code: string; onExit: () => void }
       </div>
       <button onClick={cycle} className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-card/80 px-3 py-2 text-xs font-bold"><Crosshair className="size-4 text-primary" />{fName ? `Ikuti: ${fName}` : "Bebas"}</button>
       <button onClick={() => setNv((v) => !v)} aria-pressed={nv} className={`absolute right-2 top-12 flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${nv ? "bg-chart-2 text-background" : "bg-card/80"}`}><Eye className="size-4" />NIGHT VISION {nv ? "ON" : "OFF"}</button>
-      <div className="absolute right-2 top-24 flex flex-col items-end gap-1.5">
-        <button onClick={() => startShot.current(shot === "crane" ? null : "crane")} className={`flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${shot === "crane" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><ArrowUp className="size-4" />CRANE NAIK</button>
-        <button onClick={() => startShot.current(shot === "drop" ? null : "drop")} className={`flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${shot === "drop" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><ArrowDown className="size-4" />CRANE TURUN</button>
-        <button onClick={() => startShot.current(shot === "orbit" ? null : "orbit")} className={`flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${shot === "orbit" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><Orbit className="size-4" />ORBIT 360°</button>
-        <button onClick={() => setBars((b) => !b)} aria-pressed={bars} className={`flex items-center gap-1 rounded-md px-3 py-2 text-xs font-bold ${bars ? "bg-gold text-background" : "bg-card/80"}`}><Film className="size-4" />SINEMA 21:9</button>
-        <button onClick={() => setClean(true)} className="flex items-center gap-1 rounded-md bg-card/80 px-3 py-2 text-xs font-bold"><EyeOff className="size-4" />LAYAR BERSIH</button>
+      <div className="absolute inset-x-0 top-24 z-20 mx-auto flex w-fit max-w-[96%] flex-wrap items-center justify-center gap-1 rounded-xl border border-gold/40 bg-card/70 p-1 backdrop-blur" onPointerDown={(e) => e.stopPropagation()}>
+        <span className="px-1 text-[10px] font-bold tracking-widest text-gold">SUTRADARA</span>
+        <button onClick={() => startShot.current(shot === "crane" ? null : "crane")} className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-bold ${shot === "crane" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><ArrowUp className="size-4" />CRANE NAIK</button>
+        <button onClick={() => startShot.current(shot === "drop" ? null : "drop")} className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-bold ${shot === "drop" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><ArrowDown className="size-4" />CRANE TURUN</button>
+        <button onClick={() => startShot.current(shot === "orbit" ? null : "orbit")} className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-bold ${shot === "orbit" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><Orbit className="size-4" />ORBIT 360°</button>
+        <button onClick={() => startShot.current(shot === "lock" ? null : "lock")} className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-bold ${shot === "lock" ? "bg-primary text-primary-foreground" : "bg-card/80"}`}><Crosshair className="size-4" />KUNCI & PUTAR</button>
+        <button onClick={() => setBars((b) => !b)} aria-pressed={bars} className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-bold ${bars ? "bg-gold text-background" : "bg-card/80"}`}><Film className="size-4" />SINEMA 21:9</button>
+        <button onClick={() => setClean(true)} className="flex items-center gap-1 rounded-md bg-card/80 px-2 py-1.5 text-[11px] font-bold"><EyeOff className="size-4" />LAYAR BERSIH</button>
       </div>
-      {shot && <div className="pointer-events-none absolute left-1/2 top-12 -translate-x-1/2 rounded-md bg-card/80 px-3 py-1 text-xs font-bold"><Clapperboard className="mr-1 inline size-3" />SHOT OTOMATIS · sentuh kontrol untuk berhenti</div>}
+      {shot && <div className="pointer-events-none absolute bottom-28 left-1/2 -translate-x-1/2 rounded-md bg-card/80 px-3 py-1 text-xs font-bold"><Clapperboard className="mr-1 inline size-3" />SHOT OTOMATIS · sentuh kontrol untuk berhenti</div>}
       {nv && <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,hsl(var(--background)/.75))] mix-blend-multiply" />}
       <div className="absolute bottom-6 left-6" onPointerDown={(e) => e.stopPropagation()}><Joystick vec={joy} /></div>
       <div className="absolute bottom-6 right-6 grid grid-cols-3 gap-2">
