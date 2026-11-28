@@ -1,4 +1,5 @@
 # Roadmap
+- [ ] Generate uploaded hunter with Tripo, validate rig/animations, integrate selectable character and verify in game — blocked: Tripo API balance is 0; API connects and image upload succeeds, but generation is rejected (2010). No model has been created or added to the game.
 - [x] New characters (Raka, Aisyah, Qila, Nabila), blinking eyes, idle motion
 - [x] Emblem logo
 - [x] World chat (24h), private chat, in-game chat
